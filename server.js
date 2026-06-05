@@ -124,7 +124,12 @@ app.use(express.json());
 connectDB();
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message: "Civic Perks API Working",
+  });
+});
 // API Routes
 app.use("/api/stripe", stripeRoutes);
 app.use("/api/auth", authRoutes);
