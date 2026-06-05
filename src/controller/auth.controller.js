@@ -90,7 +90,7 @@ export const loginWithOTP = async (req, res) => {
 
     console.log("User saved successfully");
 
-    await sendEmail(email, otp);
+    // await sendEmail(email, otp);
 
     console.log("OTP email sent successfully");
 
