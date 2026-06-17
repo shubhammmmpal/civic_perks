@@ -1,16 +1,19 @@
 import User from "../model/user.model.js";
+import Friend from "../model/friend.model.js";
+import States from "../model/states.model.js";
+import Inventory from "../model/inventory.model.js";
+import UserLeaderBoardLog from "../model/userLeaderBoardLog.model.js";
 import { sendEmail } from "../config/nodemailer.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
 const generateToken = (user) => {
   return jwt.sign(
-    { id: user._id, email: user.email, role: user.role  },
+    { id: user._id, email: user.email, role: user.role },
     process.env.JWT_SECRET,
-    { expiresIn: "7d" }
+    { expiresIn: "7d" },
   );
 };
-
 
 const generateOTP = () => {
   return Math.floor(1000 + Math.random() * 9000).toString();
@@ -56,10 +59,9 @@ const generateOTP = () => {
 //   }
 // };
 
-
 export const loginWithOTP = async (req, res) => {
   try {
-    const { email, location } = req.body;
+    const { email, location, referralId } = req.body;
 
     if (!email) {
       return res.status(400).json({
@@ -68,31 +70,108 @@ export const loginWithOTP = async (req, res) => {
       });
     }
 
-    console.log("Login request received:", email);
-
     const otp = generateOTP();
-
     const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
 
     let user = await User.findOne({ email });
+    let isNewUser = false;
 
     if (!user) {
+      isNewUser = true;
+
       user = await User.create({
         email,
         location,
       });
+
+      // Create default Inventory
+      await Inventory.create({
+        userId: user._id,
+      });
+
+      // Create default States
+      await States.create({
+        userId: user._id,
+      });
+
+      // Create default Leaderboard
+      await UserLeaderBoardLog.create({
+        userId: user._id,
+        totalPoints: 0,
+        years: [],
+      });
+
+      // Create empty Friend List
+      await Friend.create({
+        userId: user._id,
+        friendList: [],
+      });
     }
+
 
     user.otp = otp;
     user.otpExpiry = otpExpiry;
 
     await user.save();
 
-    console.log("User saved successfully");
+    /**
+     * Referral Logic
+     */
+    if (isNewUser && referralId) {
+      const referrer = await User.findOne({
+        refferal_id: referralId,
+      });
 
-    // await sendEmail(email, otp);
+      if (referrer && referrer._id.toString() !== user._id.toString()) {
+        // Referrer's friend document
+        let referrerFriends = await Friend.findOne({
+          userId: referrer._id,
+        });
 
-    console.log("OTP email sent successfully");
+        if (!referrerFriends) {
+          referrerFriends = await Friend.create({
+            userId: referrer._id,
+            friendList: [],
+          });
+        }
+
+        // New user's friend document
+        let userFriends = await Friend.findOne({
+          userId: user._id,
+        });
+
+        if (!userFriends) {
+          userFriends = await Friend.create({
+            userId: user._id,
+            friendList: [],
+          });
+        }
+
+        // Add user to referrer's friend list
+        await Friend.updateOne(
+          { userId: referrer._id },
+          {
+            $addToSet: {
+              friendList: user._id,
+            },
+          },
+        );
+
+        // Add referrer to user's friend list
+        await Friend.updateOne(
+          { userId: user._id },
+          {
+            $addToSet: {
+              friendList: referrer._id,
+            },
+          },
+        );
+
+        // Optional: save who referred the user
+        user.refferredBy = referralId;
+        await user.save();
+      }
+    }
 
     return res.status(200).json({
       success: true,
@@ -113,7 +192,6 @@ export const loginWithOTP = async (req, res) => {
     });
   }
 };
-
 
 export const verifyOTP = async (req, res) => {
   try {
@@ -149,10 +227,9 @@ export const verifyOTP = async (req, res) => {
         id: user._id,
         email: user.email,
         role: user.role,
-        location: user.location
-      }
+        location: user.location,
+      },
     });
-
   } catch (err) {
     console.log(err);
     res.status(500).json({ message: "Server error" });
@@ -168,7 +245,7 @@ export const adminSignup = async (req, res) => {
     if (existingAdmin) {
       return res.status(400).json({
         success: false,
-        message: "Admin already exists"
+        message: "Admin already exists",
       });
     }
 
@@ -178,18 +255,18 @@ export const adminSignup = async (req, res) => {
       email,
       name,
       password: hashedPassword,
-      role: "ADMIN"
+      role: "ADMIN",
     });
 
     res.status(201).json({
       success: true,
       message: "Admin created successfully",
-      admin
+      admin,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -200,37 +277,34 @@ export const adminSignin = async (req, res) => {
 
     const admin = await User.findOne({
       email,
-      role: "ADMIN"
+      role: "ADMIN",
     });
 
     if (!admin) {
       return res.status(404).json({
         success: false,
-        message: "Admin not found"
+        message: "Admin not found",
       });
     }
 
-    const isMatch = await bcrypt.compare(
-      password,
-      admin.password
-    );
+    const isMatch = await bcrypt.compare(password, admin.password);
 
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        message: "Invalid credentials"
+        message: "Invalid credentials",
       });
     }
 
     const token = jwt.sign(
       {
         id: admin._id,
-        role: admin.role
+        role: admin.role,
       },
       process.env.JWT_SECRET,
       {
-        expiresIn: "7d"
-      }
+        expiresIn: "7d",
+      },
     );
 
     res.status(200).json({
@@ -241,14 +315,78 @@ export const adminSignin = async (req, res) => {
         id: admin._id,
         name: admin.name,
         email: admin.email,
-        role: admin.role
-      }
+        role: admin.role,
+      },
     });
-
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
+    });
+  }
+};
+
+export const generateReferralId = async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // If referral already exists
+    if (user.refferal_id) {
+      return res.status(200).json({
+        success: true,
+        message: "Referral ID already generated",
+        data: {
+          refferal_id: user.refferal_id,
+        },
+      });
+    }
+
+    let referralId;
+    let exists = true;
+
+    while (exists) {
+      referralId =
+        user.email.split("@")[0].toUpperCase() +
+        Math.floor(1000 + Math.random() * 9000);
+
+      exists = await User.exists({
+        refferal_id: referralId,
+      });
+    }
+
+    user.refferal_id = referralId;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Referral ID generated successfully",
+      data: {
+        userId: user._id,
+        refferal_id: referralId,
+      },
+    });
+  } catch (error) {
+    console.error("Generate Referral Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
     });
   }
 };

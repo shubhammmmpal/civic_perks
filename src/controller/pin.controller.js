@@ -5,6 +5,7 @@ import User from "../model/user.model.js";
 import { getLevelData, XP_CONFIG } from "../helper/constants.js";
 import Activity from "../model/activity.model.js"
 import Inventory from "../model/inventory.model.js";
+import { updateLeaderboardXP } from "../helper/helper.js";
 
 // export const createPin = async (req, res) => {
 //   try {
@@ -114,12 +115,12 @@ export const createPin = async (req, res) => {
 
     const pinBounty = Number(bounty) || 0;
 
-    if (user.credits < pinBounty) {
-      return res.status(400).json({
-        success: false,
-        message: "Insufficient credits to create pin",
-      });
-    }
+    // if (user.credits < pinBounty) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Insufficient credits to create pin",
+    //   });
+    // }
 
     // =========================================
     // PARSE QUESTIONS
@@ -187,10 +188,10 @@ export const createPin = async (req, res) => {
     // =========================================
     // UPDATE USER REWARDS
     // =========================================
-
+const xpReward = 10;
     user.credits = user.credits - pinBounty + 5;
 
-    user.xp += 10;
+    user.xp += xpReward;
 
     // max trust score should not exceed 99.9
     user.trustScore = Math.min(
@@ -212,6 +213,12 @@ export const createPin = async (req, res) => {
     // =========================================
     // UPDATE STATES
     // =========================================
+
+    await updateLeaderboardXP(
+      userId,
+      xpReward,
+      // session // if using transactions
+    );
 
     await States.findOneAndUpdate(
       { userId: userId },

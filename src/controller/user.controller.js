@@ -364,3 +364,127 @@ export const getActivitiesByUserID = async (req, res) => {
     });
   }
 };
+
+export const getUsers = async (req, res) => {
+  try {
+    let {
+      page = 1,
+      limit = 10,
+      search = "",
+      status,
+      sort,
+      fromDate,
+      toDate
+    } = req.query;
+
+    page = Number(page);
+    limit = Number(limit);
+
+    const filter = {
+      role: "USER"
+    };
+
+    // Search by name, email, nickname
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { nickname: { $regex: search, $options: "i" } }
+      ];
+    }
+
+    // Status filter
+    if (status) {
+      filter.status = status;
+    }
+
+    // Date filter
+    if (fromDate || toDate) {
+      filter.createdAt = {};
+
+      if (fromDate) {
+        filter.createdAt.$gte = new Date(fromDate);
+      }
+
+      if (toDate) {
+        filter.createdAt.$lte = new Date(toDate);
+      }
+    }
+
+    // Sorting
+    let sortOption = {};
+
+    if (sort === "asc") {
+      sortOption.name = 1;
+    } else if (sort === "desc") {
+      sortOption.name = -1;
+    } else {
+      sortOption.createdAt = -1;
+    }
+
+    const users = await User.find(filter)
+      .select(
+        "_id name email nickname role status xp trustScore level levelName createdAt"
+      )
+      .sort(sortOption)
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const totalUsers = await User.countDocuments(filter);
+
+    return res.status(200).json({
+      success: true,
+      totalUsers,
+      currentPage: page,
+      totalPages: Math.ceil(totalUsers / limit),
+      users
+    });
+
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+export const deleteUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    // Prevent admin deletion
+    if (user.role === "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin account cannot be deleted"
+      });
+    }
+
+    await User.findByIdAndDelete(userId);
+
+    return res.status(200).json({
+      success: true,
+      message: "User deleted successfully"
+    });
+
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+

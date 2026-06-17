@@ -11,6 +11,7 @@ import Activity from "../model/activity.model.js";
 import Fine from "../model/fine.model.js";
 import Megaphone from "../model/megaphone.model.js";
 import GoldenCargo from "../model/goldenCargo.model.js";
+import { updateLeaderboardXP } from "../helper/helper.js";
 
 /*
 |--------------------------------------------------------------------------
@@ -461,6 +462,11 @@ if (!activity) {
 
       user.xp += travelXP;
       user.credits += 5;
+      await updateLeaderboardXP(
+        user._id,
+        travelXP,
+        session
+      );
 
       // trust score increase
       user.trustScore = Math.min(
@@ -786,6 +792,12 @@ if (!activity) {
     user.xp += travelXP;
     user.credits += 2;
 
+    await updateLeaderboardXP(
+      user._id,
+      travelXP,
+      session
+    );
+
     // ======================================
     // TRUST SCORE INCREASE
     // ======================================
@@ -1093,6 +1105,12 @@ export const solvePin = async (req, res) => {
           session,
         },
       ).select("name email profileImage credits xp");
+
+      await updateLeaderboardXP(
+        validation.validatedBy,
+        validatorXP,
+        session
+      );
 
       // =================================================
       // UPDATE STATS
@@ -1439,6 +1457,12 @@ if (!activity) {
     }
 
     user.xp += travelXP;
+
+    await updateLeaderboardXP(
+      user._id,
+      travelXP,
+      session
+    );
 
     // trust score increase
     user.trustScore = Math.min(

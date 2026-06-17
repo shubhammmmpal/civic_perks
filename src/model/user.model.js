@@ -82,6 +82,12 @@ activeAt: { type: Date, default: Date.now },
   refferal_id: {
     type: String,
   },
+
+  password: {
+  type: String,
+  // required: true
+},
+
   status: { type: String, enum: ["active", "inactive", "banned"], default: "active" }
 
 }, { timestamps: true });
