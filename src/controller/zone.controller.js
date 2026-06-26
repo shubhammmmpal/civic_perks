@@ -1,6 +1,8 @@
-import Zone from "../model/zone.model.js"
-import ZoneReporter from "../model/zoneReporter.model.js"
-import User from "../model/user.model.js"
+import Zone from "../model/zone.model.js";
+import ZoneReporter from "../model/zoneReporter.model.js";
+import User from "../model/user.model.js";
+import mongoose from "mongoose";
+
 
 // export const submitZoneTag = async (req, res) => {
 //   try {
@@ -14,7 +16,7 @@ import User from "../model/user.model.js"
 //         console.log(req.user.id)
 
 //     const userId = req.user.id;
-   
+
 //     const user = await User.findById(userId);
 
 //      const userLevel = user.level;
@@ -85,21 +87,14 @@ import User from "../model/user.model.js"
 //   }
 // };
 
-
-
 export const submitZoneTag = async (req, res) => {
   try {
-    const {
-      hexagonId,
-      category,
-      latitude,
-      longitude,
-    } = req.body;
+    const { hexagonId, category, latitude, longitude } = req.body;
 
     const userId = req.user.id;
-     const user = await User.findById(userId);
+    const user = await User.findById(userId);
 
-     const userLevel = user.level;
+    const userLevel = user.level;
 
     if (!hexagonId || !category) {
       return res.status(400).json({
@@ -136,8 +131,7 @@ export const submitZoneTag = async (req, res) => {
     if (existingReport) {
       return res.status(409).json({
         success: false,
-        message:
-          "You have already submitted a tag for this zone.",
+        message: "You have already submitted a tag for this zone.",
       });
     }
 
@@ -164,9 +158,7 @@ export const submitZoneTag = async (req, res) => {
         longitude,
       },
 
-      expiresAt: new Date(
-        Date.now() + 30 * 24 * 60 * 60 * 1000
-      ),
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
 
     // -----------------------------
@@ -192,8 +184,7 @@ export const submitZoneTag = async (req, res) => {
     let totalPoints = 0;
 
     reports.forEach((report) => {
-      categoryPoints[report.category] +=
-        report.voteWeight;
+      categoryPoints[report.category] += report.voteWeight;
 
       totalPoints += report.voteWeight;
     });
@@ -201,29 +192,19 @@ export const submitZoneTag = async (req, res) => {
     let winningCategory = "mixed";
     let highestPoints = 0;
 
-    Object.entries(categoryPoints).forEach(
-      ([category, points]) => {
-        if (points > highestPoints) {
-          highestPoints = points;
-          winningCategory = category;
-        }
+    Object.entries(categoryPoints).forEach(([category, points]) => {
+      if (points > highestPoints) {
+        highestPoints = points;
+        winningCategory = category;
       }
-    );
+    });
 
     const confidenceScore =
       totalPoints > 0
-        ? Number(
-            (
-              (highestPoints / totalPoints) *
-              100
-            ).toFixed(2)
-          )
+        ? Number(((highestPoints / totalPoints) * 100).toFixed(2))
         : 0;
 
-    const primaryCategory =
-      confidenceScore >= 60
-        ? winningCategory
-        : "mixed";
+    const primaryCategory = winningCategory;
 
     zone = await Zone.findByIdAndUpdate(
       zone._id,
@@ -236,7 +217,7 @@ export const submitZoneTag = async (req, res) => {
       },
       {
         new: true,
-      }
+      },
     );
 
     // -----------------------------
@@ -245,14 +226,95 @@ export const submitZoneTag = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message:
-        "Zone tag submitted successfully",
+      message: "Zone tag submitted successfully",
       data: {
         zone,
       },
     });
   } catch (error) {
     console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+export const getAllZones = async (req, res) => {
+  try {
+    const zones = await Zone.find().sort({
+      totalPoints: -1,
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: zones.length,
+      data: zones,
+    });
+  } catch (error) {
+    console.error("Get All Zones Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+export const getZoneById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid zone id",
+      });
+    }
+
+    const zone = await Zone.findById(id);
+
+    if (!zone) {
+      return res.status(404).json({
+        success: false,
+        message: "Zone not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: zone,
+    });
+  } catch (error) {
+    console.error("Get Zone By Id Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+export const getZoneByHexagonId = async (req, res) => {
+  try {
+    const { hexagonId } = req.params;
+
+    const zone = await Zone.findOne({ hexagonId });
+
+    if (!zone) {
+      return res.status(404).json({
+        success: false,
+        message: "Zone not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: zone,
+    });
+  } catch (error) {
+    console.error("Get Zone By HexagonId Error:", error);
 
     return res.status(500).json({
       success: false,

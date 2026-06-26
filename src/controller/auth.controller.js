@@ -6,6 +6,7 @@ import UserLeaderBoardLog from "../model/userLeaderBoardLog.model.js";
 import { sendEmail } from "../config/nodemailer.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { validateSubscription } from "../helper/subscription.js";
 
 const generateToken = (user) => {
   return jwt.sign(
@@ -217,7 +218,11 @@ export const verifyOTP = async (req, res) => {
     await user.save();
 
     // ✅ Generate JWT Token
+    await validateSubscription(user._id);
     const token = generateToken(user);
+
+
+
 
     res.json({
       success: true,
@@ -390,3 +395,5 @@ export const generateReferralId = async (req, res) => {
     });
   }
 };
+
+

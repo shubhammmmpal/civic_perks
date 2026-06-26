@@ -3,9 +3,10 @@ import Pin from "../model/pin.model.js";
 import States from "../model/states.model.js";
 import User from "../model/user.model.js";
 import { getLevelData, XP_CONFIG } from "../helper/constants.js";
-import Activity from "../model/activity.model.js"
+import Activity from "../model/activity.model.js";
 import Inventory from "../model/inventory.model.js";
 import { updateLeaderboardXP } from "../helper/helper.js";
+import { validateSubscription } from "../helper/subscription.js";
 
 // export const createPin = async (req, res) => {
 //   try {
@@ -21,7 +22,6 @@ import { updateLeaderboardXP } from "../helper/helper.js";
 //     } = req.body || {};
 
 //     const userId = req.user?.id;
-   
 
 //     // parse questions
 //     let questions = [];
@@ -52,7 +52,7 @@ import { updateLeaderboardXP } from "../helper/helper.js";
 //         longitude,
 //         // coordinates: [Number(longitude), Number(latitude)]
 //       }
-      
+
 //     });
 
 //     res.status(201).json({
@@ -76,12 +76,7 @@ export const createPin = async (req, res) => {
     console.log("BODY:", req.body);
     console.log("FILES:", req.files);
 
-    const {
-      description,
-      bounty,
-      latitude,
-      longitude,
-    } = req.body || {};
+    const { description, bounty, latitude, longitude } = req.body || {};
 
     const userId = req.user?.id;
 
@@ -154,9 +149,7 @@ export const createPin = async (req, res) => {
     // =========================================
 
     const imageUrls =
-      req.files?.map(
-        (file) => file.path || file.filename
-      ) || [];
+      req.files?.map((file) => file.path || file.filename) || [];
 
     // =========================================
     // CREATE PIN
@@ -178,17 +171,14 @@ export const createPin = async (req, res) => {
       location: {
         type: "Point",
 
-        coordinates: [
-          Number(longitude),
-          Number(latitude),
-        ],
+        coordinates: [Number(longitude), Number(latitude)],
       },
     });
 
     // =========================================
     // UPDATE USER REWARDS
     // =========================================
-const xpReward = 10;
+    const xpReward = 10;
     user.credits = user.credits - pinBounty + 5;
 
     user.xp += xpReward;
@@ -196,7 +186,7 @@ const xpReward = 10;
     // max trust score should not exceed 99.9
     user.trustScore = Math.min(
       99.9,
-      Number((user.trustScore + 0.1).toFixed(1))
+      Number((user.trustScore + 0.1).toFixed(1)),
     );
 
     // =========================================
@@ -232,35 +222,35 @@ const xpReward = 10;
       {
         new: true,
         upsert: true,
-      }
+      },
     );
 
     // =========================================
-// CREATE ACTIVITY LOG
-// =========================================
+    // CREATE ACTIVITY LOG
+    // =========================================
 
-await Activity.create({
-  userId: userId,
+    await Activity.create({
+      userId: userId,
 
-  activityType: "pin_dropped",
+      activityType: "pin_dropped",
 
-  pinId: newPin._id,
+      pinId: newPin._id,
 
-  pinTitle: description || "Pin Created",
+      pinTitle: description || "Pin Created",
 
-  images: imageUrls,
+      images: imageUrls,
 
-  xpEarned: 10,
+      xpEarned: 10,
 
-  creditsSpent: pinBounty,
+      creditsSpent: pinBounty,
 
-  activityLocation: {
-    latitude: Number(latitude),
-    longitude: Number(longitude),
-  },
+      activityLocation: {
+        latitude: Number(latitude),
+        longitude: Number(longitude),
+      },
 
-  status: "completed",
-});
+      status: "completed",
+    });
 
     return res.status(201).json({
       success: true,
@@ -275,7 +265,6 @@ await Activity.create({
 
       remainingCredits: user.credits,
     });
-
   } catch (error) {
     console.error(error);
 
@@ -289,24 +278,47 @@ await Activity.create({
 
 export const getAllPins = async (req, res) => {
   try {
-    const pins = await Pin.find({})
-      .populate("createdBy", "name email") // optional
-      .populate("validatedBy", "name email") // optional
-      .sort({ createdAt: -1 }) // latest first
+    const { page = 1, limit = 10, search = "" } = req.query;
+
+    const pageNumber = parseInt(page);
+    const limitNumber = parseInt(limit);
+
+    // Search filter
+    const filter = {};
+
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: "i" } }, // pin title
+        { description: { $regex: search, $options: "i" } }, // pin description
+        { address: { $regex: search, $options: "i" } }, // pin address
+      ];
+    }
+
+    const totalRecords = await Pin.countDocuments(filter);
+
+    const pins = await Pin.find(filter)
+      .populate("createdBy", "name email")
+      .populate("validatedBy", "name email")
+      .sort({ createdAt: -1 })
+      .skip((pageNumber - 1) * limitNumber)
+      .limit(limitNumber)
       .lean();
 
     res.status(200).json({
       success: true,
+      currentPage: pageNumber,
+      totalPages: Math.ceil(totalRecords / limitNumber),
+      totalRecords,
       count: pins.length,
-      data: pins
+      data: pins,
     });
-
   } catch (error) {
     console.error(error);
+
     res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -329,18 +341,9 @@ export const getPinById = async (req, res) => {
     // GET PIN
     // =========================================
     const pin = await Pin.findById(id)
-      .populate(
-        "createdBy",
-        "name email profileImage"
-      )
-      .populate(
-        "validatedBy",
-        "name email profileImage xp wallet"
-      )
-      .populate(
-        "beneficiaries",
-        "name email profileImage"
-      );
+      .populate("createdBy", "name email profileImage")
+      .populate("validatedBy", "name email profileImage xp wallet")
+      .populate("beneficiaries", "name email profileImage");
 
     if (!pin) {
       return res.status(404).json({
@@ -360,10 +363,7 @@ export const getPinById = async (req, res) => {
     // =========================================
     // IF PIN IS UNDER VALIDATION
     // =========================================
-    if (
-      pin.validatedBy &&
-      pin.status === "orange"
-    ) {
+    if (pin.validatedBy && pin.status === "orange") {
       responseData.validationInfo = {
         validator: pin.validatedBy,
 
@@ -376,8 +376,7 @@ export const getPinById = async (req, res) => {
             xp: pin.xpScore * 0.5,
           },
 
-          note:
-            "Beneficiary rewards are distributed only after the validator successfully completes the task.",
+          note: "Beneficiary rewards are distributed only after the validator successfully completes the task.",
         },
 
         taskStatus: pin.status,
@@ -389,8 +388,7 @@ export const getPinById = async (req, res) => {
     // =========================================
     if (pin.status === "green") {
       responseData.completionInfo = {
-        message:
-          "This task has already been completed successfully.",
+        message: "This task has already been completed successfully.",
 
         completedBy: pin.validatedBy,
 
@@ -402,7 +400,6 @@ export const getPinById = async (req, res) => {
     // SEND RESPONSE
     // =========================================
     return res.status(200).json(responseData);
-
   } catch (error) {
     console.error(error);
 
@@ -415,10 +412,10 @@ export const getPinById = async (req, res) => {
 };
 
 export const getNearbyPins = async (req, res) => {
-
   try {
-
     const userId = req.user.id;
+
+    await validateSubscription(userId);
 
     const { latitude, longitude } = req.query;
 
@@ -429,7 +426,7 @@ export const getNearbyPins = async (req, res) => {
     if (!latitude || !longitude) {
       return res.status(400).json({
         success: false,
-        message: "Latitude and longitude required"
+        message: "Latitude and longitude required",
       });
     }
 
@@ -437,84 +434,116 @@ export const getNearbyPins = async (req, res) => {
     // GET INVENTORY
     // ==============================
 
+    const user = await User.findById(userId);
+
     const inventory = await Inventory.findOne({ userId });
 
     // ==============================
     // RADIUS LOGIC
     // ==============================
 
+    //     let radiusInMiles = 1;
+
+    // const radarFlareActive =
+    //   inventory?.boosts?.radarFlare?.active?.expiresAt &&
+    //   inventory.boosts.radarFlare.active.expiresAt > new Date();
+
+    //     if (radarFlareActive) {
+    //       radiusInMiles = 5;
+    //     }
+
+    const radarFlareActive =
+      inventory?.boosts?.radarFlare?.active?.expiresAt &&
+      inventory.boosts.radarFlare.active.expiresAt > new Date();
+
     let radiusInMiles = 1;
+    let isGlobalAccess = false;
 
-const radarFlareActive =
-  inventory?.boosts?.radarFlare?.active?.expiresAt &&
-  inventory.boosts.radarFlare.active.expiresAt > new Date();
+    switch (user.tier) {
+      case "Civic_Plus":
+        radiusInMiles = 10;
+        break;
 
-    if (radarFlareActive) {
-      radiusInMiles = 5;
+      case "Civic_Pro":
+        isGlobalAccess = true;
+        break;
+
+      default:
+        radiusInMiles = radarFlareActive ? 5 : 1;
     }
 
-    const radiusInMeters =
-      radiusInMiles * 1609.34;
+    // const radiusInMeters =
+    //   radiusInMiles * 1609.34;
 
     // ==============================
     // XRAY FILTER
     // ==============================
 
-const xrayFilterActive =
-  inventory?.boosts?.XrayFilter?.active?.expiresAt &&
-  inventory.boosts.XrayFilter.active.expiresAt > new Date();
+    const xrayFilterActive =
+      inventory?.boosts?.XrayFilter?.active?.expiresAt &&
+      inventory.boosts.XrayFilter.active.expiresAt > new Date();
 
     // ==============================
     // GET NEARBY PINS
     // ==============================
 
-    let nearbyPins = await Pin.find({
-      location: {
-        $near: {
-          $geometry: {
-            type: "Point",
+    // let nearbyPins = await Pin.find({
+    //   location: {
+    //     $near: {
+    //       $geometry: {
+    //         type: "Point",
 
-            coordinates: [
-              parseFloat(longitude),
-              parseFloat(latitude)
-            ]
+    //         coordinates: [
+    //           parseFloat(longitude),
+    //           parseFloat(latitude)
+    //         ]
+    //       },
+
+    //       $maxDistance: radiusInMeters
+    //     }
+    //   }
+    // })
+    // .lean();
+
+    let nearbyPins = [];
+
+    if (isGlobalAccess) {
+      nearbyPins = await Pin.find({}).lean();
+    } else {
+      const radiusInMeters = radiusInMiles * 1609.34;
+
+      nearbyPins = await Pin.find({
+        location: {
+          $near: {
+            $geometry: {
+              type: "Point",
+              coordinates: [parseFloat(longitude), parseFloat(latitude)],
+            },
+            $maxDistance: radiusInMeters,
           },
-
-          $maxDistance: radiusInMeters
-        }
-      }
-    })
-    .lean();
+        },
+      }).lean();
+    }
 
     // ==============================
     // XRAY FILTER LOGIC
     // ==============================
 
     if (xrayFilterActive) {
-
       // Only red pins
-      let redPins = nearbyPins.filter(
-        (pin) => pin.status === "red"
-      );
+      let redPins = nearbyPins.filter((pin) => pin.status === "red");
 
       // Sort by highest bounty
-      redPins.sort(
-        (a, b) => b.bounty - a.bounty
-      );
+      redPins.sort((a, b) => b.bounty - a.bounty);
 
       // If 10+ pins exist
       if (redPins.length >= 10) {
-
         nearbyPins = redPins.slice(0, 10);
-
       } else {
-
         // Show 50% of nearby pins
         const totalPins = nearbyPins.length;
 
-        const halfPins = Math.ceil(
-          totalPins * 0.5
-        );
+        const halfPins = Math.ceil(totalPins * 0.5);
 
         nearbyPins = nearbyPins
           .sort((a, b) => b.bounty - a.bounty)
@@ -527,26 +556,69 @@ const xrayFilterActive =
     // ==============================
 
     return res.status(200).json({
-      success: true,
+  success: true,
 
-      radarFlareActive,
+  tier: user.tier,
 
-      xrayFilterActive,
+  radius: isGlobalAccess
+    ? "Global"
+    : `${radiusInMiles} Miles`,
 
-      radiusUsed: `${radiusInMiles} mile`,
+  radarFlareActive,
 
-      totalPins: nearbyPins.length,
+  xrayFilterActive,
 
-      data: nearbyPins
-    });
+  totalPins: nearbyPins.length,
 
+  data: nearbyPins
+});
   } catch (error) {
-
     console.log(error);
 
     return res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
+    });
+  }
+};
+
+export const changePinStatus = async (req, res) => {
+  try {
+    const { pinId } = req.params;
+    const { pinStatus } = req.body;
+
+    const allowedStatuses = ["verified", "fake", "pending", "rejected"];
+
+    if (!allowedStatuses.includes(pinStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid pin status",
+      });
+    }
+
+    const pin = await Pin.findById(pinId);
+
+    if (!pin) {
+      return res.status(404).json({
+        success: false,
+        message: "Pin not found",
+      });
+    }
+
+    pin.pinStatus = pinStatus;
+    await pin.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Pin status updated successfully",
+      data: pin,
+    });
+  } catch (error) {
+    console.error("Change Pin Status Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
     });
   }
 };

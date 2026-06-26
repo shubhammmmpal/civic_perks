@@ -34,9 +34,10 @@ router.put("/update-profile", protect, upload.single("image"), updateProfile);
 router.get("/profile", protect, getProfile);
 router.put("/active-user", protect, activeUser);
 router.get("/users", getUsers);
-router.delete("/users/:userId", deleteUser);
+// router.delete("/users/:userId", deleteUser);
 router.post("/generate-referral", generateReferralId);
 
+router.delete("/delete-user/:userId", deleteUser);
 // GET ALL STATES
 router.get("/states", getAllStates);
 

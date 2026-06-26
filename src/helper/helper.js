@@ -118,3 +118,150 @@ export const updateLeaderboardXP = async (
 
   await leaderboard.save({ session });
 };
+
+
+export const getRandomBooster = () => {
+  const random = Math.random();
+
+  if (random < 0.5) {
+    return "radarFlare"; // 50%
+  }
+
+  if (random < 0.8) {
+    return "XrayFilter"; // 30%
+  }
+
+  if (random < 0.95) {
+    return "goldenCargo"; // 15%
+  }
+
+  return "megaphone"; // 5%
+};
+
+
+export const updateLeaderboard = async (userId, points) => {
+  const now = new Date();
+
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+
+  const firstDayOfYear = new Date(year, 0, 1);
+  const week =
+    Math.ceil(
+      ((now - firstDayOfYear) / 86400000 +
+        firstDayOfYear.getDay() +
+        1) /
+        7
+    );
+
+  let log = await UserLeaderBoardLog.findOne({ userId });
+
+  if (!log) {
+    log = await UserLeaderBoardLog.create({
+      userId,
+      totalPoints: 0,
+      years: [],
+    });
+  }
+
+  log.totalPoints += points;
+
+  let yearObj = log.years.find(y => y.year === year);
+
+  if (!yearObj) {
+    yearObj = {
+      year,
+      yearlyPoints: 0,
+      months: [],
+    };
+
+    log.years.push(yearObj);
+  }
+
+  yearObj.yearlyPoints += points;
+
+  let monthObj = yearObj.months.find(
+    m => m.month === month
+  );
+
+  if (!monthObj) {
+    monthObj = {
+      month,
+      monthlyPoints: 0,
+      weeks: [],
+    };
+
+    yearObj.months.push(monthObj);
+  }
+
+  monthObj.monthlyPoints += points;
+
+  let weekObj = monthObj.weeks.find(
+    w => w.week === week
+  );
+
+  if (!weekObj) {
+    weekObj = {
+      week,
+      points: 0,
+    };
+
+    monthObj.weeks.push(weekObj);
+  }
+
+  weekObj.points += points;
+
+  await log.save();
+};
+
+export const processCreatorReward = async (route) => {
+
+  if (route.rewardStatus?.creatorRewardGiven) {
+    return;
+  }
+
+  const approvedFriendsCount =
+    route.assignedFriends.filter(
+      friend => friend.status === "approved"
+    ).length;
+
+  if (approvedFriendsCount === 0) {
+    return;
+  }
+
+  const requiredLikes =
+    Math.ceil(approvedFriendsCount * 0.5);
+
+  const currentLikes =
+    route.likedBy.length;
+
+  if (currentLikes < requiredLikes) {
+    return;
+  }
+
+  const creatorRewardXp =
+    route.reward.creator.xpMultiplier * 100;
+
+  const creatorTrustScore =
+    route.reward.creator.trustScore;
+
+  await User.findByIdAndUpdate(
+    route.creatorId,
+    {
+      $inc: {
+        xp: creatorRewardXp,
+        trustScore: creatorTrustScore
+      }
+    }
+  );
+
+  await updateLeaderboard(
+    route.creatorId,
+    creatorRewardXp
+  );
+
+  route.rewardStatus.creatorRewardGiven = true;
+  route.rewardStatus.rewardedAt = new Date();
+
+  await route.save();
+};

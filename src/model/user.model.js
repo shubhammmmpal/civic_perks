@@ -40,9 +40,26 @@ activeAt: { type: Date, default: Date.now },
 
   tier: {
     type: String,
-   enum: ["Free Tier", "Civic Plus", "Civic Pro"],
-    default: "Free Tier"
+   enum: ["Free_Tier", "Civic_Plus", "Civic_Pro"],
+    default: "Free_Tier"
   },
+
+
+subscriptionStatus: {
+  type: String,
+  enum: ["active", "expired"],
+  default: "expired"
+},
+
+subscriptionStartDate: {
+  type: Date,
+  default: null
+},
+
+subscriptionEndDate: {
+  type: Date,
+  default: null
+},
 
   qrCode: String,
 

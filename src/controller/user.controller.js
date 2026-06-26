@@ -2,6 +2,7 @@ import User from '../model/user.model.js';
 import PaidPlan from '../model/paidPlans.model.js';
 import States from '../model/states.model.js';
 import Activity from "../model/activity.model.js";
+import { validateSubscription } from '../helper/subscription.js';
 
 
 // export const updateProfile = async (req, res) => {
@@ -118,6 +119,8 @@ export const updateProfile = async (req, res) => {
 export const getProfile = async (req, res) => {
   try {
     const userId = req.user.id;
+
+    await validateSubscription(userId);
 
     // 👤 Get user
     const user = await User.findById(userId)
@@ -464,12 +467,12 @@ export const deleteUser = async (req, res) => {
     }
 
     // Prevent admin deletion
-    if (user.role === "ADMIN") {
-      return res.status(403).json({
-        success: false,
-        message: "Admin account cannot be deleted"
-      });
-    }
+    // if (user.role === "ADMIN") {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Admin account cannot be deleted"
+    //   });
+    // }
 
     await User.findByIdAndDelete(userId);
 

@@ -70,7 +70,7 @@ const PinSchema = new mongoose.Schema(
 
     pinStatus: {
       type: String,
-      enum: ["verified", "fake", "pending"],
+      enum: ["verified", "fake", "pending","rejected"],
       default: "pending",
     },
 
