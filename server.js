@@ -117,6 +117,7 @@ import zoneRoutes from "./src/routes/zone.route.js";
 import leaderBoardRoutes from "./src/routes/leaderBoard.route.js";
 import magicRouteVibeRoutes from "./src/routes/magicRouteVibe.route.js";
 import magicRouteRoutes from "./src/routes/magicRoute.route.js";
+import downloadPdfRoutes from "./src/routes/downloadPdf.route.js";
 
 import stripeRoutes from "./src/routes/stripe.route.js";
 
@@ -146,6 +147,7 @@ app.use("/api/zones", zoneRoutes);
 app.use("/api/leaderboard", leaderBoardRoutes);
 app.use("/api/magic-route-vibes", magicRouteVibeRoutes);
 app.use("/api/magic-routes", magicRouteRoutes);
+app.use("/api", downloadPdfRoutes);
 
 
 const PORT = process.env.PORT || 5000;

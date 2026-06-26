@@ -105,6 +105,21 @@ subscriptionEndDate: {
   // required: true
 },
 
+  qrCode: {
+    type: String, // QR image URL/path
+    default: null
+  },
+
+  qrToken: {
+    type: String, // unique token encoded inside QR
+    unique: true,
+    index: true
+  },
+  qrUrl: {
+  type: String,
+  default: null,
+},
+
   status: { type: String, enum: ["active", "inactive", "banned"], default: "active" }
 
 }, { timestamps: true });

@@ -6,6 +6,8 @@ import UserLeaderBoardLog from "../model/userLeaderBoardLog.model.js";
 import { sendEmail } from "../config/nodemailer.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import QRCode from "qrcode";
+import { v4 as uuidv4 } from "uuid";
 import { validateSubscription } from "../helper/subscription.js";
 
 const generateToken = (user) => {
@@ -80,9 +82,22 @@ export const loginWithOTP = async (req, res) => {
     if (!user) {
       isNewUser = true;
 
+      const qrToken = uuidv4();
+
+      const qrData = JSON.stringify({
+        userId: qrToken,
+      });
+
+      const qrUrl = `http://localhost:5175/user/${qrToken}`;
+
+      const qrCode = await QRCode.toDataURL(qrUrl);
+
       user = await User.create({
         email,
         location,
+        qrToken,
+        qrCode,
+        qrUrl
       });
 
       // Create default Inventory
@@ -108,7 +123,6 @@ export const loginWithOTP = async (req, res) => {
         friendList: [],
       });
     }
-
 
     user.otp = otp;
     user.otpExpiry = otpExpiry;
@@ -220,9 +234,6 @@ export const verifyOTP = async (req, res) => {
     // ✅ Generate JWT Token
     await validateSubscription(user._id);
     const token = generateToken(user);
-
-
-
 
     res.json({
       success: true,
@@ -396,4 +407,20 @@ export const generateReferralId = async (req, res) => {
   }
 };
 
+export const getUserByQrToken = async (req, res) => {
+  const user = await User.findOne({
+    qrToken: req.params.qrToken,
+  }).select("name nickname image trustScore level");
 
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: "User not found",
+    });
+  }
+
+  res.json({
+    success: true,
+    data: user,
+  });
+}

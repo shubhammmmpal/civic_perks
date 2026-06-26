@@ -4,7 +4,8 @@ import {
   verifyOTP,
   adminSignup,
   adminSignin,
-  generateReferralId
+  generateReferralId,
+  getUserByQrToken
 } from "../controller/auth.controller.js";
 import {
   updateProfile,
@@ -46,5 +47,6 @@ router.get("/states/:userId", getStatesByUserID);
 router.get("/activities", getAllActivities);
 
 router.get("/activities/:userId", getActivitiesByUserID);
+router.get("/user/:qrToken", getUserByQrToken);
 
 export default router;
