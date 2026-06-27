@@ -75,7 +75,10 @@ subscriptionEndDate: {
     index: true
   }],
 
-  image: String,
+  image: {
+    type : String,
+    default: null
+  },
 
   otp: String,
   otpExpiry: {

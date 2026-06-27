@@ -209,7 +209,7 @@ export const getFriendsLeaderboard = async (req, res) => {
       })
         .populate(
           "userId",
-          "name username profileImage xp level"
+          "name username image xp level"
         )
         .lean();
 
