@@ -483,6 +483,14 @@ export const getNearbyPins = async (req, res) => {
       inventory?.boosts?.XrayFilter?.active?.expiresAt &&
       inventory.boosts.XrayFilter.active.expiresAt > new Date();
 
+      const megaphoneActive =
+  inventory?.boosts?.megaphone?.active?.expiresAt &&
+  inventory.boosts.megaphone.active.expiresAt > new Date();
+
+const goldenCargoActive =
+  inventory?.boosts?.goldenCargo?.active?.expiresAt &&
+  inventory.boosts.goldenCargo.active.expiresAt > new Date();
+
     // ==============================
     // GET NEARBY PINS
     // ==============================
@@ -567,7 +575,8 @@ export const getNearbyPins = async (req, res) => {
   radarFlareActive,
 
   xrayFilterActive,
-
+megaphoneActive,
+goldenCargoActive,
   totalPins: nearbyPins.length,
 
   data: nearbyPins
