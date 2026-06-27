@@ -118,6 +118,7 @@ import leaderBoardRoutes from "./src/routes/leaderBoard.route.js";
 import magicRouteVibeRoutes from "./src/routes/magicRouteVibe.route.js";
 import magicRouteRoutes from "./src/routes/magicRoute.route.js";
 import downloadPdfRoutes from "./src/routes/downloadPdf.route.js";
+import dashboardRoutes from "./src/routes/dashboard.route.js";
 
 import stripeRoutes from "./src/routes/stripe.route.js";
 
@@ -148,6 +149,7 @@ app.use("/api/leaderboard", leaderBoardRoutes);
 app.use("/api/magic-route-vibes", magicRouteVibeRoutes);
 app.use("/api/magic-routes", magicRouteRoutes);
 app.use("/api", downloadPdfRoutes);
+app.use("/api/admin/dashboard", dashboardRoutes);
 
 
 const PORT = process.env.PORT || 5000;
