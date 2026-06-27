@@ -18,6 +18,12 @@ import {
   getActivitiesByUserID,
   getUsers,
   deleteUser,
+  getUserById,
+  updateCredits,
+  updateTrustScore,
+  suspendUser,
+  banUser,
+  updateXp
   
 } from "../controller/user.controller.js";
 import { protect, authorizeRoles } from "../middleware/auth.middlewere.js";
@@ -48,5 +54,18 @@ router.get("/activities", getAllActivities);
 
 router.get("/activities/:userId", getActivitiesByUserID);
 router.get("/user/:qrToken", getUserByQrToken);
+
+router.get("/:userId", getUserById);
+
+
+  router.patch("/:userId/credits",  updateCredits);
+
+  router.patch("/:userId/trust-score", updateTrustScore);
+
+  router.patch("/:userId/suspend", suspendUser);
+
+  router.patch("/:userId/ban", banUser);
+
+  router.patch("/:userId/xp", updateXp);
 
 export default router;

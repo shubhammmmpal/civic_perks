@@ -79,6 +79,44 @@ export const loginWithOTP = async (req, res) => {
     let user = await User.findOne({ email });
     let isNewUser = false;
 
+    // ===============================
+// Prevent suspended/banned users from logging in
+// ===============================
+
+if (user) {
+  // Permanently banned
+  if (user.status === "banned") {
+    return res.status(403).json({
+      success: false,
+      message: "Your account has been permanently banned.",
+      reason: user.banReason || null,
+    });
+  }
+
+  // Temporarily suspended
+  if (user.status === "suspended") {
+    // Suspension still active
+    if (
+      user.suspendedUntil &&
+      new Date(user.suspendedUntil) > new Date()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Your account has been temporarily suspended.",
+        reason: user.suspendReason || null,
+        suspendedUntil: user.suspendedUntil,
+      });
+    }
+
+    // Suspension expired → automatically reactivate account
+    user.status = "active";
+    user.suspendedUntil = null;
+    user.suspendReason = null;
+
+    await user.save();
+  }
+}
+
     if (!user) {
       isNewUser = true;
 

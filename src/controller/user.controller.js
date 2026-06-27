@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import User from '../model/user.model.js';
 import PaidPlan from '../model/paidPlans.model.js';
 import States from '../model/states.model.js';
@@ -392,7 +393,8 @@ export const getUsers = async (req, res) => {
       filter.$or = [
         { name: { $regex: search, $options: "i" } },
         { email: { $regex: search, $options: "i" } },
-        { nickname: { $regex: search, $options: "i" } }
+        { nickname: { $regex: search, $options: "i" } },
+        { levelName: { $regex: search, $options: "i" } }
       ];
     }
 
@@ -427,7 +429,7 @@ export const getUsers = async (req, res) => {
 
     const users = await User.find(filter)
       .select(
-        "_id name email nickname role status xp trustScore level levelName createdAt"
+        "_id image name email nickname role status xp trustScore level levelName createdAt"
       )
       .sort(sortOption)
       .skip((page - 1) * limit)
@@ -491,3 +493,277 @@ export const deleteUser = async (req, res) => {
   }
 };
 
+export const getUserById = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    console.log(userId)
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    const user = await User.findById(userId)
+      // .populate("perks")
+      // .populate("plans")
+      .select("-password -otp -otpExpiry -__v");
+
+      console.log(user)
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "User fetched successfully",
+      data: user,
+    });
+  } catch (error) {
+    console.error("Get User Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+export const updateCredits = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { type, amount } = req.body;
+
+        if (!["grant", "deduct"].includes(type)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid operation"
+            });
+        }
+
+        const user = await User.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        if (type === "grant") {
+            user.credits += Number(amount);
+        } else {
+            user.credits = Math.max(0, user.credits - Number(amount));
+        }
+
+        await user.save();
+
+        return res.json({
+            success: true,
+            message: "Credits updated successfully",
+            credits: user.credits
+        });
+
+    } catch (err) {
+        return res.status(500).json({
+            success: false,
+            message: err.message
+        });
+    }
+};
+
+export const updateXp = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { type, amount } = req.body;
+
+    if (!["grant", "deduct"].includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: "Type must be either 'grant' or 'deduct'."
+      });
+    }
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Amount must be greater than 0."
+      });
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found."
+      });
+    }
+
+    if (type === "grant") {
+      user.xp += Number(amount);
+    } else {
+      user.xp = Math.max(0, user.xp - Number(amount));
+    }
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `XP ${type === "grant" ? "granted" : "deducted"} successfully.`,
+      data: {
+        userId: user._id,
+        xp: user.xp
+      }
+    });
+
+  } catch (error) {
+    console.error("Update XP Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error."
+    });
+  }
+};
+
+export const updateTrustScore = async (req, res) => {
+    try {
+
+        const { userId } = req.params;
+        const { action, trustScore } = req.body;
+
+        const user = await User.findById(userId);
+
+        if (!user)
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+
+        if (action === "reset") {
+            user.trustScore = 75;
+        } else if (action === "change") {
+
+            if (trustScore < 0 || trustScore > 99.9) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Trust score must be between 0 and 99.9"
+                });
+            }
+
+            user.trustScore = trustScore;
+        }
+
+        await user.save();
+
+        return res.json({
+            success: true,
+            message: "Trust score updated",
+            trustScore: user.trustScore
+        });
+
+    } catch (err) {
+
+        return res.status(500).json({
+            success: false,
+            message: err.message
+        });
+
+    }
+};
+
+export const suspendUser = async (req, res) => {
+
+    try {
+
+        const { userId } = req.params;
+        const { days, reason } = req.body;
+
+        const user = await User.findById(userId);
+
+        if (!user)
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+
+        const suspendedUntil = new Date();
+        suspendedUntil.setDate(suspendedUntil.getDate() + Number(days));
+
+        user.status = "suspended";
+        user.suspendReason = reason;
+        user.suspendedUntil = suspendedUntil;
+
+        await user.save();
+
+        return res.json({
+            success: true,
+            message: "User suspended successfully",
+            suspendedUntil
+        });
+
+    } catch (err) {
+
+        return res.status(500).json({
+            success: false,
+            message: err.message
+        });
+
+    }
+
+};
+
+
+export const banUser = async (req, res) => {
+
+    try {
+
+        const { userId } = req.params;
+        const { reason } = req.body;
+
+        const user = await User.findById(userId);
+
+        if (!user)
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+
+        user.status = "banned";
+        user.banReason = reason;
+        user.bannedAt = new Date();
+
+        // Remove QR if needed
+        user.qrToken = null;
+        user.qrUrl = null;
+
+        // Remove refresh/session tokens if stored
+        // user.refreshToken = null;
+
+        // Save IP if available
+        user.blacklistedIp = req.ip;
+
+        await user.save();
+
+        return res.json({
+            success: true,
+            message: "User permanently banned"
+        });
+
+    } catch (err) {
+
+        return res.status(500).json({
+            success: false,
+            message: err.message
+        });
+
+    }
+
+};

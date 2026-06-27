@@ -51,7 +51,7 @@ export const getLeaderboard = async (req, res) => {
 
     const leaderboardLogs =
       await UserLeaderBoardLog.find()
-        .populate("userId", "name username profileImage")
+        .populate("userId", "name username image")
         .lean();
 
     let leaderboard = [];

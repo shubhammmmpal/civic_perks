@@ -120,7 +120,38 @@ subscriptionEndDate: {
   default: null,
 },
 
-  status: { type: String, enum: ["active", "inactive", "banned"], default: "active" }
+  // Add these fields
+
+status: {
+  type: String,
+  enum: ["active", "suspended", "banned"],
+  default: "active"
+},
+
+suspendReason: {
+  type: String,
+  default: null
+},
+
+suspendedUntil: {
+  type: Date,
+  default: null
+},
+
+banReason: {
+  type: String,
+  default: null
+},
+
+bannedAt: {
+  type: Date,
+  default: null
+},
+
+blacklistedIp: {
+  type: String,
+  default: null
+}
 
 }, { timestamps: true });
 
