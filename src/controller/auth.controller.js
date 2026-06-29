@@ -80,42 +80,39 @@ export const loginWithOTP = async (req, res) => {
     let isNewUser = false;
 
     // ===============================
-// Prevent suspended/banned users from logging in
-// ===============================
+    // Prevent suspended/banned users from logging in
+    // ===============================
 
-if (user) {
-  // Permanently banned
-  if (user.status === "banned") {
-    return res.status(403).json({
-      success: false,
-      message: "Your account has been permanently banned.",
-      reason: user.banReason || null,
-    });
-  }
+    if (user) {
+      // Permanently banned
+      if (user.status === "banned") {
+        return res.status(403).json({
+          success: false,
+          message: "Your account has been permanently banned.",
+          reason: user.banReason || null,
+        });
+      }
 
-  // Temporarily suspended
-  if (user.status === "suspended") {
-    // Suspension still active
-    if (
-      user.suspendedUntil &&
-      new Date(user.suspendedUntil) > new Date()
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "Your account has been temporarily suspended.",
-        reason: user.suspendReason || null,
-        suspendedUntil: user.suspendedUntil,
-      });
+      // Temporarily suspended
+      if (user.status === "suspended") {
+        // Suspension still active
+        if (user.suspendedUntil && new Date(user.suspendedUntil) > new Date()) {
+          return res.status(403).json({
+            success: false,
+            message: "Your account has been temporarily suspended.",
+            reason: user.suspendReason || null,
+            suspendedUntil: user.suspendedUntil,
+          });
+        }
+
+        // Suspension expired → automatically reactivate account
+        user.status = "active";
+        user.suspendedUntil = null;
+        user.suspendReason = null;
+
+        await user.save();
+      }
     }
-
-    // Suspension expired → automatically reactivate account
-    user.status = "active";
-    user.suspendedUntil = null;
-    user.suspendReason = null;
-
-    await user.save();
-  }
-}
 
     if (!user) {
       isNewUser = true;
@@ -135,7 +132,7 @@ if (user) {
         location,
         qrToken,
         qrCode,
-        qrUrl
+        qrUrl,
       });
 
       // Create default Inventory
@@ -175,55 +172,104 @@ if (user) {
         refferal_id: referralId,
       });
 
+      // if (referrer && referrer._id.toString() !== user._id.toString()) {
+      //   // Referrer's friend document
+      //   let referrerFriends = await Friend.findOne({
+      //     userId: referrer._id,
+      //   });
+
+      //   if (!referrerFriends) {
+      //     referrerFriends = await Friend.create({
+      //       userId: referrer._id,
+      //       friendList: [],
+      //     });
+      //   }
+
+      //   // New user's friend document
+      //   let userFriends = await Friend.findOne({
+      //     userId: user._id,
+      //   });
+
+      //   if (!userFriends) {
+      //     userFriends = await Friend.create({
+      //       userId: user._id,
+      //       friendList: [],
+      //     });
+      //   }
+
+      //   // Add user to referrer's friend list
+      //   await Friend.updateOne(
+      //     { userId: referrer._id },
+      //     {
+      //       $addToSet: {
+      //         friendList: user._id,
+      //       },
+      //     },
+      //   );
+
+      //   // Add referrer to user's friend list
+      //   await Friend.updateOne(
+      //     { userId: user._id },
+      //     {
+      //       $addToSet: {
+      //         friendList: referrer._id,
+      //       },
+      //     },
+      //   );
+
+      //   // Optional: save who referred the user
+      //   user.refferredBy = referralId;
+      //   await user.save();
+      // }
+
       if (referrer && referrer._id.toString() !== user._id.toString()) {
-        // Referrer's friend document
-        let referrerFriends = await Friend.findOne({
-          userId: referrer._id,
-        });
 
-        if (!referrerFriends) {
-          referrerFriends = await Friend.create({
-            userId: referrer._id,
-            friendList: [],
-          });
-        }
+  // Existing friendship logic
+  await Friend.updateOne(
+    { userId: referrer._id },
+    {
+      $addToSet: {
+        friendList: user._id,
+      },
+    }
+  );
 
-        // New user's friend document
-        let userFriends = await Friend.findOne({
-          userId: user._id,
-        });
+  await Friend.updateOne(
+    { userId: user._id },
+    {
+      $addToSet: {
+        friendList: referrer._id,
+      },
+    }
+  );
 
-        if (!userFriends) {
-          userFriends = await Friend.create({
-            userId: user._id,
-            friendList: [],
-          });
-        }
+  console.log(user._id, referrer._id)
 
-        // Add user to referrer's friend list
-        await Friend.updateOne(
-          { userId: referrer._id },
-          {
-            $addToSet: {
-              friendList: user._id,
-            },
-          },
-        );
+  // ==========================
+  // Update States Collection
+  // ==========================
 
-        // Add referrer to user's friend list
-        await Friend.updateOne(
-          { userId: user._id },
-          {
-            $addToSet: {
-              friendList: referrer._id,
-            },
-          },
-        );
+  await States.updateOne(
+    { userId: referrer._id },
+    {
+      $inc: {
+        friends: 1,
+      },
+    }
+  );
 
-        // Optional: save who referred the user
-        user.refferredBy = referralId;
-        await user.save();
-      }
+  await States.updateOne(
+    { userId: user._id },
+    {
+      $inc: {
+        friends: 1,
+      },
+    }
+  );
+
+  user.refferredBy = referralId;
+  await user.save();
+}
     }
 
     return res.status(200).json({
@@ -248,7 +294,7 @@ if (user) {
 
 export const verifyOTP = async (req, res) => {
   try {
-    const { email, otp } = req.body;
+    const { email, otp, fcmToken } = req.body;
 
     const user = await User.findOne({ email });
 
@@ -264,6 +310,10 @@ export const verifyOTP = async (req, res) => {
       return res.status(400).json({ message: "OTP expired" });
     }
 
+    // Save FCM Token if provided
+    if (fcmToken) {
+      user.fcmToken = fcmToken;
+    }
     // OTP clear
     user.otp = null;
     user.otpExpiry = null;
@@ -292,7 +342,7 @@ export const verifyOTP = async (req, res) => {
 
 export const adminSignup = async (req, res) => {
   try {
-    const { email, password, name } = req.body;
+    const { email, password, name, fcmToken } = req.body;
 
     const existingAdmin = await User.findOne({ email });
 
@@ -308,6 +358,7 @@ export const adminSignup = async (req, res) => {
     const admin = await User.create({
       email,
       name,
+      fcmToken,
       password: hashedPassword,
       role: "ADMIN",
     });
@@ -327,11 +378,12 @@ export const adminSignup = async (req, res) => {
 
 export const adminSignin = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, fcmToken } = req.body;
 
     const admin = await User.findOne({
       email,
       role: "ADMIN",
+      fcmToken
     });
 
     if (!admin) {
@@ -370,6 +422,7 @@ export const adminSignin = async (req, res) => {
         name: admin.name,
         email: admin.email,
         role: admin.role,
+        fcmToken
       },
     });
   } catch (error) {
@@ -461,4 +514,4 @@ export const getUserByQrToken = async (req, res) => {
     success: true,
     data: user,
   });
-}
+};

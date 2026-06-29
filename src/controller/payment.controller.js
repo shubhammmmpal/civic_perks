@@ -300,3 +300,98 @@ export const updatePaymentStatus = async (req, res) => {
     });
   }
 };
+
+export const getPayments = async (req, res) => {
+  try {
+    const { id: userId, role } = req.user;
+
+    const {
+      search,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    const query = {};
+
+    // Only admin can view all payments
+    if (role !== "ADMIN") {
+      query.userId = userId;
+    }
+
+    // ==========================
+    // Search
+    // ==========================
+    if (search) {
+      const regex = new RegExp(search, "i");
+
+      // Search by payment fields
+      query.$or = [
+        { paymentIntentId: regex },
+        { customerId: regex },
+        { planName: regex },
+        { status: regex },
+      ];
+
+      // Admin can also search by user details
+      if (role === "ADMIN") {
+        const users = await User.find({
+          $or: [
+            { name: regex },
+            { username: regex },
+            { email: regex },
+          ],
+        }).select("_id");
+
+        if (users.length) {
+          query.$or.push({
+            userId: {
+              $in: users.map((u) => u._id),
+            },
+          });
+        }
+      }
+    }
+
+    // ==========================
+    // Date Filter
+    // ==========================
+    if (startDate || endDate) {
+      query.createdAt = {};
+
+      if (startDate) {
+        query.createdAt.$gte = new Date(startDate);
+      }
+
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = end;
+      }
+    }
+
+    const total = await Payment.countDocuments(query);
+
+    const payments = await Payment.find(query)
+      .populate("userId", "name username email")
+      .sort({ createdAt: -1 })
+      .skip((Number(page) - 1) * Number(limit))
+      .limit(Number(limit));
+
+    return res.status(200).json({
+      success: true,
+      total,
+      page: Number(page),
+      totalPages: Math.ceil(total / Number(limit)),
+      data: payments,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

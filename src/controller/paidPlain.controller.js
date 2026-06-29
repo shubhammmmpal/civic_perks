@@ -3,6 +3,7 @@ import User from "../model/user.model.js";
 import Inventory from "../model/inventory.model.js";
 import Megaphone from "../model/megaphone.model.js";
 import GoldenCargo from "../model/goldenCargo.model.js";
+import BoostLedger from "../model/BoostLedger.model.js";
 import Pin from "../model/pin.model.js";
 import { BOOSTS } from "../helper/constants.js";
 
@@ -104,9 +105,27 @@ export const purchaseBoost = async (req, res) => {
       });
     }
 
+    const creditsBefore = user.credits;
+    
     // Deduct credits
     user.credits -= totalPrice;
     await user.save();
+
+    const creditsAfter = user.credits;
+
+    await BoostLedger.create({
+    userId,
+    boostType,
+    quantity,
+    pricePerBoost: boost.price,
+    totalPrice,
+    creditsBefore,
+    creditsAfter,
+    // activatedAt: now,
+    // expiresAt,
+    transactionType: "PURCHASE",
+    status: "SUCCESS"
+});
 
     // Find/Create inventory
     let inventory = await Inventory.findOne({ userId });
@@ -155,7 +174,6 @@ export const purchaseBoost = async (req, res) => {
     });
   }
 };
-
 
 
 export const useInventory = async (req, res) => {
@@ -324,6 +342,7 @@ export const useMegaphone = async (req, res) => {
     });
   }
 };
+
 
 export const useGoldenCargo = async (req, res) => {
   try {
@@ -532,3 +551,69 @@ export const deleteInventory = async (req, res) => {
 };
 
 
+export const getBoostPurchaseHistory = async (req, res) => {
+  try {
+    const { id: userId, role } = req.user;
+
+    const {
+      search,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    const query = {};
+
+    // Normal user can only view their own records
+    if (role !== "ADMIN") {
+      query.userId = userId;
+    }
+
+    // Search by boost type
+    if (search) {
+      query.boostType = {
+        $regex: search,
+        $options: "i",
+      };
+    }
+
+    // Date Filter
+    if (startDate || endDate) {
+      query.createdAt = {};
+
+      if (startDate) {
+        query.createdAt.$gte = new Date(startDate);
+      }
+
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = end;
+      }
+    }
+
+    const total = await BoostLedger.countDocuments(query);
+
+    const history = await BoostLedger.find(query)
+      .populate("userId", "name username email")
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+
+    return res.status(200).json({
+      success: true,
+      total,
+      page: Number(page),
+      totalPages: Math.ceil(total / limit),
+      data: history,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

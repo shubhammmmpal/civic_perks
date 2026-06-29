@@ -3,8 +3,9 @@
 // dotenv.config();
 
 import express from "express";
-import { createPaymentIntent,updatePaymentStatus,verifyPayment,stripeWebhook } from "../controller/payment.controller.js";
+import { createPaymentIntent,updatePaymentStatus,verifyPayment,stripeWebhook,getPayments } from "../controller/payment.controller.js";
 // import Stripe from "stripe";
+import { protect } from "../middleware/auth.middlewere.js";
 
 const router = express.Router();
 
@@ -21,6 +22,9 @@ router.post(
   createPaymentIntent
 );
 router.post("/verify-payment", verifyPayment);
+router.get("/payments",protect, getPayments);
+  
+
 
 // routes/payment.routes.js
 
