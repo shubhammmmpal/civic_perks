@@ -12,6 +12,7 @@ import Fine from "../model/fine.model.js";
 import Megaphone from "../model/megaphone.model.js";
 import GoldenCargo from "../model/goldenCargo.model.js";
 import { updateLeaderboardXP } from "../helper/helper.js";
+import { checkLevelUp } from "../helper/helper.js";
 
 /*
 |--------------------------------------------------------------------------
@@ -91,22 +92,17 @@ export const validatePin = async (req, res) => {
       });
     }
 
-
     const reservedCargo = await GoldenCargo.findOne({
       pinId: pin._id,
       expiresAt: { $gt: new Date() },
     }).session(session);
 
-    if (
-      reservedCargo &&
-      reservedCargo.userId.toString() !== userId
-    ) {
+    if (reservedCargo && reservedCargo.userId.toString() !== userId) {
       await session.abortTransaction();
 
       return res.status(403).json({
         success: false,
-        message:
-          "This resource pin is reserved by another Golden Cargo user",
+        message: "This resource pin is reserved by another Golden Cargo user",
       });
     }
 
@@ -115,31 +111,26 @@ export const validatePin = async (req, res) => {
     // =====================================================
 
     if (pin.category === "Resources (Zero-Waste, Upcycling & Utilities)") {
-
       const activeCargo = await GoldenCargo.findOne({
         pinId: pin._id,
-        expiresAt: { $gt: new Date() }
+        expiresAt: { $gt: new Date() },
       }).session(session);
 
       if (
-        pin.category ===
-        "Resources (Zero-Waste, Upcycling & Utilities)" &&
+        pin.category === "Resources (Zero-Waste, Upcycling & Utilities)" &&
         activeCargo
       ) {
-
         const alreadyReserved = activeCargo.pinId.some(
-          (id) => id.toString() === pin._id.toString()
+          (id) => id.toString() === pin._id.toString(),
         );
 
         if (!alreadyReserved) {
-
           if (activeCargo.pinId.length >= 3) {
             await session.abortTransaction();
 
             return res.status(400).json({
               success: false,
-              message:
-                "Golden Cargo can reserve maximum 3 resource pins",
+              message: "Golden Cargo can reserve maximum 3 resource pins",
             });
           }
 
@@ -154,9 +145,7 @@ export const validatePin = async (req, res) => {
       }
 
       if (activeCargo) {
-
-        const isCargoOwner =
-          activeCargo.userId.toString() === userId;
+        const isCargoOwner = activeCargo.userId.toString() === userId;
 
         if (!isCargoOwner) {
           await session.abortTransaction();
@@ -273,27 +262,26 @@ export const validatePin = async (req, res) => {
     // CHECK ACTIVITY
     // =========================================
 
-if (!activity) {
+    if (!activity) {
+      const activeCargo = await GoldenCargo.findOne({
+        userId,
+        pinId: pin._id,
+        expiresAt: { $gt: new Date() },
+      }).session(session);
 
-  const activeCargo = await GoldenCargo.findOne({
-    userId,
-    pinId: pin._id,
-    expiresAt: { $gt: new Date() },
-  }).session(session);
+      const isReservedResourcePin =
+        pin.category === "Resources (Zero-Waste, Upcycling & Utilities)" &&
+        activeCargo;
 
-  const isReservedResourcePin =
-    pin.category === "Resources (Zero-Waste, Upcycling & Utilities)" &&
-    activeCargo;
+      if (!isReservedResourcePin) {
+        await session.abortTransaction();
 
-  if (!isReservedResourcePin) {
-    await session.abortTransaction();
-
-    return res.status(404).json({
-      success: false,
-      message: "No pending activity found",
-    });
-  }
-}
+        return res.status(404).json({
+          success: false,
+          message: "No pending activity found",
+        });
+      }
+    }
 
     console.log("190");
 
@@ -462,11 +450,7 @@ if (!activity) {
 
       user.xp += travelXP;
       user.credits += 5;
-      await updateLeaderboardXP(
-        user._id,
-        travelXP,
-        session
-      );
+      await updateLeaderboardXP(user._id, travelXP, session);
 
       // trust score increase
       user.trustScore = Math.min(
@@ -487,6 +471,8 @@ if (!activity) {
       console.log("hit 1");
 
       await user.save({ session });
+
+      await checkLevelUp(user, session);
 
       // =========================================
       // UPDATE USER STATS
@@ -792,11 +778,7 @@ if (!activity) {
     user.xp += travelXP;
     user.credits += 2;
 
-    await updateLeaderboardXP(
-      user._id,
-      travelXP,
-      session
-    );
+    await updateLeaderboardXP(user._id, travelXP, session);
 
     // ======================================
     // TRUST SCORE INCREASE
@@ -817,6 +799,8 @@ if (!activity) {
     user.levelName = levelData.name;
 
     await user.save({ session });
+
+    await checkLevelUp(user, session);
 
     // =========================================
     // FETCH VALIDATOR
@@ -953,20 +937,13 @@ export const solvePin = async (req, res) => {
     // GOLDEN CARGO RESERVATION CHECK
     // =====================================================
 
-    if (
-      pin.reservationExpiresAt &&
-      pin.reservationExpiresAt > new Date()
-    ) {
-
+    if (pin.reservationExpiresAt && pin.reservationExpiresAt > new Date()) {
       const activeCargo = await GoldenCargo.findOne({
         pinId: pin._id,
         expiresAt: { $gt: new Date() },
       }).session(session);
 
-      if (
-        activeCargo &&
-        activeCargo.userId.toString() !== userId
-      ) {
+      if (activeCargo && activeCargo.userId.toString() !== userId) {
         await session.abortTransaction();
 
         return res.status(403).json({
@@ -1064,6 +1041,7 @@ export const solvePin = async (req, res) => {
       validation.status = "green";
 
       pin.solvedAt = new Date();
+      pin.pin_solve_time = timeTaken || 0;
 
       validation.solvedAt = new Date();
 
@@ -1106,11 +1084,61 @@ export const solvePin = async (req, res) => {
         },
       ).select("name email profileImage credits xp");
 
-      await updateLeaderboardXP(
-        validation.validatedBy,
-        validatorXP,
-        session
-      );
+      await updateLeaderboardXP(validation.validatedBy, validatorXP, session);
+
+      // =================================================
+      // REFERRAL BONUS
+      // =================================================
+
+      const validator = await User.findById(userId)
+        .select("createdAt refferredBy")
+        .session(session);
+
+      if (validator) {
+        const isEligible =
+          Date.now() - validator.createdAt.getTime() <=
+          30 * 24 * 60 * 60 * 1000;
+
+        if (isEligible && validator.refferredBy) {
+          const referrer = await User.findOne({
+            refferal_id: validator.refferredBy,
+          }).session(session);
+
+          if (referrer) {
+            const referralCredits = Math.floor(validatorBounty * 0.1);
+            const referralXP = Math.floor(validatorXP * 0.1);
+
+            await User.findByIdAndUpdate(
+              referrer._id,
+              {
+                $inc: {
+                  credits: referralCredits,
+                  xp: referralXP,
+                },
+              },
+              { session },
+            );
+
+            await States.findOneAndUpdate(
+              {
+                userId: referrer._id,
+              },
+              {
+                $inc: {
+                  earnedByFriends: referralCredits,
+                },
+              },
+              {
+                upsert: true,
+                new: true,
+                session,
+              },
+            );
+
+            await updateLeaderboardXP(referrer._id, referralXP, session);
+          }
+        }
+      }
 
       // =================================================
       // UPDATE STATS
@@ -1122,6 +1150,7 @@ export const solvePin = async (req, res) => {
         {
           $inc: {
             pinsSolved: 1,
+            hoursServed: Number(timeTaken) || 0,
             // totalXP: validatorXP,
             // totalCredits: validatorBounty,
             // totalEarnedBounty: validatorBounty,
@@ -1334,27 +1363,26 @@ export const fakePin = async (req, res) => {
       .sort({ createdAt: -1 })
       .session(session);
 
-if (!activity) {
+    if (!activity) {
+      const activeCargo = await GoldenCargo.findOne({
+        userId,
+        pinId: pin._id,
+        expiresAt: { $gt: new Date() },
+      }).session(session);
 
-  const activeCargo = await GoldenCargo.findOne({
-    userId,
-    pinId: pin._id,
-    expiresAt: { $gt: new Date() },
-  }).session(session);
+      const isReservedResourcePin =
+        pin.category === "Resources (Zero-Waste, Upcycling & Utilities)" &&
+        activeCargo;
 
-  const isReservedResourcePin =
-    pin.category === "Resources (Zero-Waste, Upcycling & Utilities)" &&
-    activeCargo;
+      if (!isReservedResourcePin) {
+        await session.abortTransaction();
 
-  if (!isReservedResourcePin) {
-    await session.abortTransaction();
-
-    return res.status(404).json({
-      success: false,
-      message: "No pending activity found",
-    });
-  }
-}
+        return res.status(404).json({
+          success: false,
+          message: "No pending activity found",
+        });
+      }
+    }
 
     // ==========================================
     // TRAVEL DISTANCE
@@ -1458,11 +1486,7 @@ if (!activity) {
 
     user.xp += travelXP;
 
-    await updateLeaderboardXP(
-      user._id,
-      travelXP,
-      session
-    );
+    await updateLeaderboardXP(user._id, travelXP, session);
 
     // trust score increase
     user.trustScore = Math.min(

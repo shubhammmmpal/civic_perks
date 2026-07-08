@@ -150,6 +150,10 @@ const PinSchema = new mongoose.Schema(
       enum: ["red", "orange", "green"],
       default: "red",
     },
+    pin_solve_time:{
+      type: Number,
+      default: 0, 
+    },
 
     // =========================================
     // OPTIONAL EXTRA FIELDS

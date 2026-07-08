@@ -35,7 +35,7 @@ const userSchema = new mongoose.Schema(
       default: "Observer",
     },
     xp: { type: Number, default: 0, min: 0 },
-    credits: { type: Number, default: 0, min: 0 },
+    credits: { type: Number, default: 10000, min: 0 },
     //   boostType: { type:String, enum: ["X-Ray Filter", "Golden Cargo", "Radar Flare", "Megaphone"] , default:'none'},
 
     tier: {
@@ -46,8 +46,8 @@ const userSchema = new mongoose.Schema(
 
     subscriptionStatus: {
       type: String,
-      enum: ["active", "expired"],
-      default: "expired",
+      enum: ["active", "expired","none"],
+      default: "none",
     },
 
     subscriptionStartDate: {

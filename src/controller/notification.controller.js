@@ -1,5 +1,9 @@
 import PublicPrivateNotification from "../model/publicPrivateNotification.model.js"
 import Notification from "../model/notification.model.js";
+import User from "../model/user.model.js"
+// import admin from '../config/firebase.js'
+import { messaging } from "../config/firebase.js";
+import mongoose from "mongoose";
 
 export const createNotification = async (req, res) => {
   try {
@@ -54,13 +58,15 @@ export const createNotification = async (req, res) => {
             },
           };
           try {
-            await admin.messaging().send(message);
+            // await admin.messaging().send(message);
+            await messaging.send(message);
           } catch (fcmError) {
             console.error("FCM notification error:", fcmError);
             // throw new Error("Failed to send FCM notification: " + fcmError.message);
             notificationError = fcmError.message;
           }
         }
+          
         // }
       }
     } catch (notifyError) {

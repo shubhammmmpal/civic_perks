@@ -9,6 +9,7 @@ import jwt from "jsonwebtoken";
 import QRCode from "qrcode";
 import { v4 as uuidv4 } from "uuid";
 import { validateSubscription } from "../helper/subscription.js";
+import  Validation from "../model/validation.model.js";
 
 const generateToken = (user) => {
   return jwt.sign(
@@ -499,19 +500,74 @@ export const generateReferralId = async (req, res) => {
 };
 
 export const getUserByQrToken = async (req, res) => {
-  const user = await User.findOne({
-    qrToken: req.params.qrToken,
-  }).select("name nickname image trustScore level");
+  try {
+    const { qrToken } = req.params;
 
-  if (!user) {
-    return res.status(404).json({
-      success: false,
-      message: "User not found",
+    if (!qrToken) {
+      return res.status(400).json({ success: false, message: "Token is required" });
+    }
+
+    const user = await User.findOne({ qrToken: qrToken })
+      .select("name nickname level trustScore tier image totalHoursServed totalInterventions status");
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "Profile not found" });
+    }
+
+    if (user.status !== "active") {
+      return res.status(403).json({ success: false, message: "This profile is not active" });
+    }
+
+    // Fetch Stats from States model
+    const stats = await States.findOne({ userId: user._id });
+
+    // Fetch Recent Validations / Interventions
+    const recentValidations = await Validation.find({
+      $or: [
+        { validatedBy: user._id },
+        { beneficiaries: user._id }
+      ]
+    })
+      .sort({ solvedAt: -1 })
+      .populate("pinID", "title description category location")
+      .populate("validatedBy", "nickname");
+
+    const recentActions = recentValidations.map((action) => ({
+      title: action.pinID?.title || "Community Action",
+      description: action.pinID?.description 
+        ? action.pinID.description.substring(0, 140) + "..." 
+        : "Helped improve the community",
+      date: action.solvedAt 
+        ? action.solvedAt.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric' 
+          }) 
+        : 'Pending',
+      status: action.status,
+      validator: action.validatedBy?.nickname || "Anonymous",
+      beneficiariesCount: action.beneficiaries?.length || 0,
+    }));
+
+    res.json({
+      success: true,
+      user: {
+        name: user.name,
+        nickname: user.nickname,
+        level: user.level,
+        levelName: user.levelName,
+        trustScore: user.trustScore,
+        tier: user.tier,
+        image: user.image,
+        // Stats from States model
+        totalInterventions: stats?.pinsValidated || 0,
+        totalHoursServed: stats?.hoursServed || 0,
+        pinsDropped: stats?.pinsDropped || 0,
+        pinsSolved: stats?.pinsSolved || 0,
+      },
+      recentActions
     });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
-
-  res.json({
-    success: true,
-    data: user,
-  });
 };

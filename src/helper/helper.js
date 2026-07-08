@@ -1,4 +1,7 @@
 import UserLeaderBoardLog from "../model/userLeaderBoardLog.model.js";
+import User from "../model/user.model.js";
+import { xpSystem } from "../helper/constants.js";
+import Notification from "../model/notification.model.js"; 
 
 
 export const calculateDistanceInMeters = (
@@ -264,4 +267,56 @@ export const processCreatorReward = async (route) => {
   route.rewardStatus.rewardedAt = new Date();
 
   await route.save();
+};
+
+export const checkLevelUp = async (user, session = null) => {
+  const levelData = getLevelData(user.xp);
+
+  // No level up
+  if (user.level >= levelData.level) {
+    return false;
+  }
+
+  const oldLevel = user.level;
+
+  user.level = levelData.level;
+  user.levelName = levelData.name;
+
+  await user.save({ session });
+
+  await PublicPrivateNotification.create(
+    [
+      {
+        title: "🎉 Level Up!",
+        description: `Congratulations! You reached Level ${levelData.level} (${levelData.name}).`,
+        type: "private",
+        receivers: [user._id],
+        senderRole: "system",
+      },
+    ],
+    { session }
+  );
+
+  if (user.fcmToken) {
+    try {
+      await messaging.send({
+        token: user.fcmToken,
+        notification: {
+          title: "🎉 Level Up!",
+          body: `You reached Level ${levelData.level} (${levelData.name})`,
+        },
+        data: {
+          type: "LEVEL_UP",
+          level: String(levelData.level),
+        },
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  return {
+    oldLevel,
+    newLevel: levelData.level,
+  };
 };

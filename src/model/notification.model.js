@@ -15,15 +15,19 @@ const notificationSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    challengeId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Challenge",
-      default: null,
+       notificationType:{
+        type: String
+       },
+
+    receivers: [
+      {type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+      }
+    ],
+    senderRole:{
+      type: String
     },
-    organization: {
-      _id: String,
-      name: String,
-    },
+ 
     isRead: {
       type: Boolean,
       default: false,
