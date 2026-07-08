@@ -8,10 +8,14 @@
 
 import { initializeApp, cert } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
-import serviceAccount from "./serviceAccountKey.json" with { type: "json" };
+// import serviceAccount from "./serviceAccountKey.json" with { type: "json" };
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
-const app = initializeApp({
-  credential: cert(serviceAccount),
+serviceAccount.private_key =
+  serviceAccount.private_key.replace(/\\n/g, "\n");
+
+const app = admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
 });
 
 const messaging = getMessaging(app);
