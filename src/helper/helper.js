@@ -285,12 +285,12 @@ export const checkLevelUp = async (user, session = null) => {
 
   await user.save({ session });
 
-  await PublicPrivateNotification.create(
+  await Notification.create(
     [
       {
         title: "🎉 Level Up!",
         description: `Congratulations! You reached Level ${levelData.level} (${levelData.name}).`,
-        type: "private",
+        notificationType: "private",
         receivers: [user._id],
         senderRole: "system",
       },
