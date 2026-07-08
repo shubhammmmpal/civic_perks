@@ -2,6 +2,7 @@ import UserLeaderBoardLog from "../model/userLeaderBoardLog.model.js";
 import User from "../model/user.model.js";
 import { xpSystem } from "../helper/constants.js";
 import Notification from "../model/notification.model.js"; 
+import { getLevelData } from "../helper/constants.js";
 
 
 export const calculateDistanceInMeters = (
