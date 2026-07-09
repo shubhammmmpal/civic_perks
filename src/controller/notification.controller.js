@@ -66,7 +66,7 @@ export const createNotification = async (req, res) => {
             notificationError = fcmError.message;
           }
         }
-          
+
         // }
       }
     } catch (notifyError) {
@@ -104,43 +104,43 @@ export const createNotification = async (req, res) => {
 
 export const getMyNotifications = async (req, res) => {
   try {
-    if (!req.user || !req.user._id) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized",
-      });
-    }
+    const userId = req.user.id; // Assuming auth middleware
 
-    const userId = req.user._id;
+    // Personal Notifications
+    const personalNotifications = await Notification.find({
+      receivers: userId,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
 
-    const notifications = await PublicPrivateNotification.find({
+    // Public + Private Notifications
+    const commonNotifications = await PublicPrivateNotification.find({
       $or: [
-        // 🔓 Public notifications (receivers empty / missing)
-        {
-          type: "public",
-          $or: [{ receivers: { $exists: false } }, { receivers: { $size: 0 } }],
-        },
-
-        // 🔐 Private notifications (only if userId exists)
-        {
-          type: "private",
-          receivers: mongoose.Types.ObjectId.isValid(userId)
-            ? new mongoose.Types.ObjectId(userId)
-            : userId,
-        },
+        { type: "public" },
+        { receivers: userId },
       ],
-    }).sort({ createdAt: -1 });
+    })
+      .sort({ createdAt: -1 })
+      .lean();
 
-    res.status(200).json({
+    // Merge both collections
+    const notifications = [
+      ...personalNotifications,
+      ...commonNotifications,
+    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return res.status(200).json({
       success: true,
       count: notifications.length,
       notifications,
     });
   } catch (error) {
-    console.error("Get Notifications Error:", error.message);
-    res.status(500).json({
+    console.error("Get Notifications Error:", error);
+
+    return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Failed to fetch notifications",
+      error: error.message,
     });
   }
 };
@@ -228,5 +228,174 @@ export const sendPushNotificationToAllUsers = async (req, res) => {
         success: false,
         message: "Server error occurred. Please try again later.",
       });
+  }
+};
+
+export const readNotification = async (req, res) => {
+  try {
+    const { notificationId } = req.params;
+    const { senderRole } = req.query;
+    const userId = req.user.id;
+
+    if (!mongoose.Types.ObjectId.isValid(notificationId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid notification id",
+      });
+    }
+
+    let notification;
+
+    if (senderRole === "system") {
+      notification = await Notification.findOneAndUpdate(
+        {
+          _id: notificationId,
+          receivers: userId,
+        },
+        {
+          isRead: true,
+        },
+        {
+          new: true,
+        }
+      );
+    } else if (senderRole === "admin") {
+      notification = await PublicPrivateNotification.findOneAndUpdate(
+        {
+          _id: notificationId,
+          $or: [
+            { type: "public" },
+            { receivers: userId },
+          ],
+        },
+        {
+          $addToSet: {
+            readBy: userId,
+          },
+        },
+        {
+          new: true,
+        }
+      );
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid senderRole",
+      });
+    }
+
+    if (!notification) {
+      return res.status(404).json({
+        success: false,
+        message: "Notification not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Notification marked as read",
+      notification,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+
+export const deleteNotification = async (req, res) => {
+  try {
+    const { notificationId } = req.params;
+    const { senderRole } = req.query;
+    const userId = req.user.id;
+
+    if (!mongoose.Types.ObjectId.isValid(notificationId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid notification id",
+      });
+    }
+
+    // ============================================
+    // PERSONAL NOTIFICATION
+    // ============================================
+
+    if (senderRole === "system") {
+      const notification = await Notification.findOne({
+        _id: notificationId,
+        receivers: userId,
+      });
+
+      if (!notification) {
+        return res.status(404).json({
+          success: false,
+          message: "Notification not found",
+        });
+      }
+
+      if (notification.receivers.length === 1) {
+        await Notification.findByIdAndDelete(notificationId);
+      } else {
+        await Notification.findByIdAndUpdate(notificationId, {
+          $pull: {
+            receivers: userId,
+          },
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Notification deleted successfully",
+      });
+    }
+
+    // ============================================
+    // PUBLIC / PRIVATE NOTIFICATION
+    // ============================================
+
+    if (senderRole === "admin") {
+      const notification = await PublicPrivateNotification.findOne({
+        _id: notificationId,
+        receivers: userId,
+      });
+
+      if (!notification) {
+        return res.status(404).json({
+          success: false,
+          message: "Notification not found",
+        });
+      }
+
+      if (notification.receivers.length === 1) {
+        await PublicPrivateNotification.findByIdAndDelete(notificationId);
+      } else {
+        await PublicPrivateNotification.findByIdAndUpdate(notificationId, {
+          $pull: {
+            receivers: userId,
+          },
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Notification deleted successfully",
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      message: "Invalid senderRole",
+    });
+  } catch (error) {
+    console.error("Delete Notification Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
