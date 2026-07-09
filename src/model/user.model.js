@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-
+import { xpSystem } from "../helper/constants.js";
 const userSchema = new mongoose.Schema(
   {
     email: {
@@ -12,15 +12,12 @@ const userSchema = new mongoose.Schema(
       match: [/^\S+@\S+\.\S+$/, "Invalid email"],
     },
 
-    nickname: {
-      type: String,
-      unique: true,
-      index: true,
-      sparse: true,
-      default: function () {
-        return this.email.split("@")[0] + Math.floor(Math.random() * 1000);
-      },
-    },
+  nickname: {
+    type: String,
+    unique: true,
+    index: true,
+    sparse: true,
+  },
 
     name: { type: String, trim: true, default: "unnamed" },
     latitude: { type: Number, index: true },
@@ -111,6 +108,11 @@ const userSchema = new mongoose.Schema(
       // required: true
     },
 
+    level_milestone: {
+      type: Number,
+      default: 100
+    },
+
     qrCode: {
       type: String, // QR image URL/path
       default: null,
@@ -165,5 +167,53 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+userSchema.pre("validate", async function () {
+  if (this.nickname || !this.email) return;
+
+  const User = this.constructor;
+
+  // Remove everything after @
+  let baseNickname = this.email.split("@")[0];
+
+  // Remove trailing numbers
+  baseNickname = baseNickname.replace(/\d+$/, "");
+
+  // If nothing remains (e.g. "123@gmail.com")
+  if (!baseNickname) {
+    baseNickname = "user";
+  }
+
+  let nickname = baseNickname;
+  let counter = 1;
+
+  while (await User.exists({ nickname })) {
+    nickname = `${baseNickname}${counter}`;
+    counter++;
+  }
+
+  this.nickname = nickname;
+});
+
+userSchema.pre("save", function () {
+  if (!this.isModified("xp")) return;
+
+  const currentXP = this.xp;
+
+  // Find current level
+  const currentLevel = xpSystem.find(level => currentXP >= level.minXP);
+
+  if (currentLevel) {
+    this.level = currentLevel.level;
+    this.level_name = currentLevel.name;
+  }
+
+  // Find next milestone
+  const nextLevel = xpSystem
+    .slice()
+    .reverse()
+    .find(level => level.minXP > currentXP);
+
+  this.level_milestone = nextLevel ? nextLevel.minXP : null;
+});
 
 export default mongoose.model("User", userSchema);

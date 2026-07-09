@@ -9,7 +9,7 @@ import jwt from "jsonwebtoken";
 import QRCode from "qrcode";
 import { v4 as uuidv4 } from "uuid";
 import { validateSubscription } from "../helper/subscription.js";
-import  Validation from "../model/validation.model.js";
+import Validation from "../model/validation.model.js";
 
 const generateToken = (user) => {
   return jwt.sign(
@@ -224,53 +224,52 @@ export const loginWithOTP = async (req, res) => {
       // }
 
       if (referrer && referrer._id.toString() !== user._id.toString()) {
+        // Existing friendship logic
+        await Friend.updateOne(
+          { userId: referrer._id },
+          {
+            $addToSet: {
+              friendList: user._id,
+            },
+          },
+        );
 
-  // Existing friendship logic
-  await Friend.updateOne(
-    { userId: referrer._id },
-    {
-      $addToSet: {
-        friendList: user._id,
-      },
-    }
-  );
+        await Friend.updateOne(
+          { userId: user._id },
+          {
+            $addToSet: {
+              friendList: referrer._id,
+            },
+          },
+        );
 
-  await Friend.updateOne(
-    { userId: user._id },
-    {
-      $addToSet: {
-        friendList: referrer._id,
-      },
-    }
-  );
+        console.log(user._id, referrer._id);
 
-  console.log(user._id, referrer._id)
+        // ==========================
+        // Update States Collection
+        // ==========================
 
-  // ==========================
-  // Update States Collection
-  // ==========================
+        await States.updateOne(
+          { userId: referrer._id },
+          {
+            $inc: {
+              friends: 1,
+            },
+          },
+        );
 
-  await States.updateOne(
-    { userId: referrer._id },
-    {
-      $inc: {
-        friends: 1,
-      },
-    }
-  );
+        await States.updateOne(
+          { userId: user._id },
+          {
+            $inc: {
+              friends: 1,
+            },
+          },
+        );
 
-  await States.updateOne(
-    { userId: user._id },
-    {
-      $inc: {
-        friends: 1,
-      },
-    }
-  );
-
-  user.refferredBy = referralId;
-  await user.save();
-}
+        user.refferredBy = referralId;
+        await user.save();
+      }
     }
 
     return res.status(200).json({
@@ -384,7 +383,7 @@ export const adminSignin = async (req, res) => {
     const admin = await User.findOne({
       email,
       role: "ADMIN",
-      fcmToken
+      fcmToken,
     });
 
     if (!admin) {
@@ -423,7 +422,7 @@ export const adminSignin = async (req, res) => {
         name: admin.name,
         email: admin.email,
         role: admin.role,
-        fcmToken
+        fcmToken,
       },
     });
   } catch (error) {
@@ -504,18 +503,25 @@ export const getUserByQrToken = async (req, res) => {
     const { qrToken } = req.params;
 
     if (!qrToken) {
-      return res.status(400).json({ success: false, message: "Token is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Token is required" });
     }
 
-    const user = await User.findOne({ qrToken: qrToken })
-      .select("name nickname level trustScore tier image totalHoursServed totalInterventions status");
+    const user = await User.findOne({ qrToken: qrToken }).select(
+      "name nickname level trustScore tier image totalHoursServed totalInterventions status",
+    );
 
     if (!user) {
-      return res.status(404).json({ success: false, message: "Profile not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Profile not found" });
     }
 
     if (user.status !== "active") {
-      return res.status(403).json({ success: false, message: "This profile is not active" });
+      return res
+        .status(403)
+        .json({ success: false, message: "This profile is not active" });
     }
 
     // Fetch Stats from States model
@@ -523,10 +529,7 @@ export const getUserByQrToken = async (req, res) => {
 
     // Fetch Recent Validations / Interventions
     const recentValidations = await Validation.find({
-      $or: [
-        { validatedBy: user._id },
-        { beneficiaries: user._id }
-      ]
+      $or: [{ validatedBy: user._id }, { beneficiaries: user._id }],
     })
       .sort({ solvedAt: -1 })
       .populate("pinID", "title description category location")
@@ -534,16 +537,16 @@ export const getUserByQrToken = async (req, res) => {
 
     const recentActions = recentValidations.map((action) => ({
       title: action.pinID?.title || "Community Action",
-      description: action.pinID?.description 
-        ? action.pinID.description.substring(0, 140) + "..." 
+      description: action.pinID?.description
+        ? action.pinID.description.substring(0, 140) + "..."
         : "Helped improve the community",
-      date: action.solvedAt 
-        ? action.solvedAt.toLocaleDateString('en-US', { 
-            year: 'numeric', 
-            month: 'short', 
-            day: 'numeric' 
-          }) 
-        : 'Pending',
+      date: action.solvedAt
+        ? action.solvedAt.toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          })
+        : "Pending",
       status: action.status,
       validator: action.validatedBy?.nickname || "Anonymous",
       beneficiariesCount: action.beneficiaries?.length || 0,
@@ -565,7 +568,7 @@ export const getUserByQrToken = async (req, res) => {
         pinsDropped: stats?.pinsDropped || 0,
         pinsSolved: stats?.pinsSolved || 0,
       },
-      recentActions
+      recentActions,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
