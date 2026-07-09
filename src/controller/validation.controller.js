@@ -12,7 +12,7 @@ import Fine from "../model/fine.model.js";
 import Megaphone from "../model/megaphone.model.js";
 import GoldenCargo from "../model/goldenCargo.model.js";
 import { updateLeaderboardXP } from "../helper/helper.js";
-import { checkLevelUp } from "../helper/helper.js";
+import { checkLevelUp, sendNotification } from "../helper/helper.js";
 
 /*
 |--------------------------------------------------------------------------
@@ -346,6 +346,8 @@ export const validatePin = async (req, res) => {
       // CREATOR REWARD ONLY ONCE
       // =========================================
 
+      let pinVerifiedNotification = null;
+
       if (
         pin.pinScore >= 100 &&
         (!pin.pinStatus || pin.pinStatus === "pending")
@@ -380,6 +382,17 @@ export const validatePin = async (req, res) => {
           pinCreator.levelName = creatorLevelData.name;
 
           await pinCreator.save({ session });
+
+          pinVerifiedNotification = {
+            tokens: pinCreator.fcmToken ? [pinCreator.fcmToken] : [],
+            title: "🎉 Pin Verified",
+            body: "Congratulations! Your pin has been verified. You earned 15 XP.",
+            data: {
+              type: "PIN_VERIFIED",
+              pinId: pin._id.toString(),
+              xp: 15,
+            },
+          };
         }
       }
 
@@ -448,6 +461,9 @@ export const validatePin = async (req, res) => {
       // REWARD VALIDATOR
       // =========================================
 
+      const updated_lavel = user.xp + travelXP;
+      await checkLevelUp(user, updated_lavel, session);
+
       user.xp += travelXP;
       user.credits += 5;
       await updateLeaderboardXP(user._id, travelXP, session);
@@ -471,8 +487,6 @@ export const validatePin = async (req, res) => {
       console.log("hit 1");
 
       await user.save({ session });
-
-      await checkLevelUp(user, session);
 
       // =========================================
       // UPDATE USER STATS
@@ -552,10 +566,52 @@ export const validatePin = async (req, res) => {
       );
 
       // =========================================
+      // PREPARE NOTIFICATIONS
+      // =========================================
+
+      const pinCreator = await User.findById(pin.createdBy)
+        .select("fcmToken name")
+        .session(session);
+
+      const validatorRewardNotification = {
+        tokens: user.fcmToken ? [user.fcmToken] : [],
+        title: "✅ Pin Validated",
+        body: `You earned ${travelXP} XP and 5 Credits for validating this pin.`,
+        data: {
+          type: "PIN_VALIDATED",
+          pinId: pin._id.toString(),
+          xp: travelXP,
+          credits: 5,
+        },
+      };
+
+      const creatorNotification = {
+        tokens: pinCreator?.fcmToken ? [pinCreator.fcmToken] : [],
+        title: "📍 Pin Validation",
+        body: `${user.name} validated your pin.`,
+        data: {
+          type: "PIN_VALIDATED_BY_USER",
+          pinId: pin._id.toString(),
+          validatorId: user._id.toString(),
+        },
+      };
+
+      // =========================================
       // COMMIT
       // =========================================
 
       await session.commitTransaction();
+
+      const notifications = [
+        sendNotification(validatorRewardNotification),
+        sendNotification(creatorNotification),
+      ];
+
+      if (pinVerifiedNotification) {
+        notifications.push(sendNotification(pinVerifiedNotification));
+      }
+
+      await Promise.all(notifications);
 
       return res.status(200).json({
         success: true,
@@ -775,6 +831,10 @@ export const validatePin = async (req, res) => {
     // REWARD BENEFICIARY
     // =========================================
 
+    const updated_lavel = user.xp + travelXP;
+
+    await checkLevelUp(user, updated_lavel, session);
+
     user.xp += travelXP;
     user.credits += 2;
 
@@ -799,8 +859,6 @@ export const validatePin = async (req, res) => {
     user.levelName = levelData.name;
 
     await user.save({ session });
-
-    await checkLevelUp(user, session);
 
     // =========================================
     // FETCH VALIDATOR
@@ -855,10 +913,46 @@ export const validatePin = async (req, res) => {
     );
 
     // =========================================
+    // PREPARE NOTIFICATIONS
+    // =========================================
+
+    const pinCreator = await User.findById(pin.createdBy)
+      .select("fcmToken name")
+      .session(session);
+
+    const beneficiaryRewardNotification = {
+      tokens: user.fcmToken ? [user.fcmToken] : [],
+      title: "✅ Validation Successful",
+      body: `You earned ${travelXP} XP and 2 Credits for supporting this validation.`,
+      data: {
+        type: "PIN_VALIDATION_SUPPORT",
+        pinId: pin._id.toString(),
+        xp: travelXP,
+        credits: 2,
+      },
+    };
+
+    const creatorNotification = {
+      tokens: pinCreator?.fcmToken ? [pinCreator.fcmToken] : [],
+      title: "📍 Pin Validation",
+      body: `${user.name} also validated your pin.`,
+      data: {
+        type: "PIN_VALIDATED_BY_USER",
+        pinId: pin._id.toString(),
+        validatorId: user._id.toString(),
+      },
+    };
+
+    // =========================================
     // COMMIT
     // =========================================
 
     await session.commitTransaction();
+
+    await Promise.all([
+      sendNotification(beneficiaryRewardNotification),
+      sendNotification(creatorNotification),
+    ]);
 
     // =========================================
     // RESPONSE
@@ -907,8 +1001,6 @@ export const solvePin = async (req, res) => {
     await session.startTransaction();
 
     const { pinId } = req.params;
-
-    console.log(req);
 
     const action = req.body.action;
     const timeTaken = req.body.timeTaken;
@@ -1070,21 +1162,35 @@ export const solvePin = async (req, res) => {
       // =================================================
       // GIVE REWARD
       // =================================================
-      const updatedUser = await User.findByIdAndUpdate(
-        validation.validatedBy,
-        {
-          $inc: {
-            credits: validatorBounty,
-            xp: validatorXP,
-          },
-        },
-        {
-          new: true,
-          session,
-        },
-      ).select("name email profileImage credits xp");
 
-      await updateLeaderboardXP(validation.validatedBy, validatorXP, session);
+      // const updatedUser = await User.findByIdAndUpdate(
+      //   validation.validatedBy,
+      //   {
+      //     $inc: {
+      //       credits: validatorBounty,
+      //       xp: validatorXP,
+      //     },
+      //   },
+      //   {
+      //     new: true,
+      //     session,
+      //   },
+      // ).select("name email profileImage credits xp level levelName fcmToken");
+
+      // await updateLeaderboardXP(validation.validatedBy, validatorXP, session);
+
+      const user = await User.findById(validation.validatedBy).session(session);
+
+      const updated_lavel = user.xp + validatorXP;
+
+      await checkLevelUp(user, updated_lavel, session);
+
+      user.xp += validatorXP;
+      user.credits += validatorBounty;
+
+      await updateLeaderboardXP(user._id, validatorXP, session);
+
+      await user.save({ session });
 
       // =================================================
       // REFERRAL BONUS
@@ -1108,16 +1214,34 @@ export const solvePin = async (req, res) => {
             const referralCredits = Math.floor(validatorBounty * 0.1);
             const referralXP = Math.floor(validatorXP * 0.1);
 
-            await User.findByIdAndUpdate(
-              referrer._id,
-              {
-                $inc: {
-                  credits: referralCredits,
-                  xp: referralXP,
-                },
-              },
-              { session },
+            // const updatedReferrer = await User.findByIdAndUpdate(
+            //   referrer._id,
+            //   {
+            //     $inc: {
+            //       credits: referralCredits,
+            //       xp: referralXP,
+            //     },
+            //   },
+            //   {
+            //     new: true,
+            //     session,
+            //   },
+            // ).select("level levelName xp fcmToken");
+
+            const referrerUser = await User.findById(referrer._id).session(
+              session,
             );
+
+            const updated_lavel = referrerUser.xp + referralXP;
+
+            await checkLevelUp(referrerUser, updated_lavel, session);
+
+            referrerUser.xp += referralXP;
+            referrerUser.credits += referralCredits;
+
+            await updateLeaderboardXP(referrerUser._id, referralXP, session);
+
+            await referrerUser.save({ session });
 
             await States.findOneAndUpdate(
               {
@@ -1135,7 +1259,9 @@ export const solvePin = async (req, res) => {
               },
             );
 
-            await updateLeaderboardXP(referrer._id, referralXP, session);
+            // await updateLeaderboardXP(updatedReferrer._id, referralXP, session);
+
+            // await checkLevelUp(updatedReferrer, session);
           }
         }
       }
@@ -1217,7 +1343,39 @@ export const solvePin = async (req, res) => {
       // =================================================
       // COMMIT
       // =================================================
+
+      const pinCreator = await User.findById(pin.createdBy)
+        .select("fcmToken name")
+        .session(session);
+
+      const creatorNotification = {
+        tokens: pinCreator?.fcmToken ? [pinCreator.fcmToken] : [],
+        title: "✅ Your Pin Has Been Solved!",
+        body: `Someone has successfully solved your reported pin.`,
+        data: {
+          type: "PIN_SOLVED",
+          pinId: pin._id.toString(),
+          solvedBy: user._id.toString(),
+        },
+      };
+
+      const solverNotification = {
+        tokens: user.fcmToken ? [user.fcmToken] : [],
+        title: "🎉 Rewards Earned!",
+        body: `You earned ${validatorXP} XP and ${validatorBounty} Credits for solving a pin.`,
+        data: {
+          type: "PIN_SOLVED_REWARD",
+          pinId: pin._id.toString(),
+          xp: validatorXP,
+          credits: validatorBounty,
+        },
+      };
       await session.commitTransaction();
+
+      await Promise.all([
+        sendNotification(solverNotification),
+        sendNotification(creatorNotification),
+      ]);
 
       // =================================================
       // RESPONSE
@@ -1234,13 +1392,12 @@ export const solvePin = async (req, res) => {
         },
 
         currentUser: {
-          id: updatedUser._id,
-          name: updatedUser.name,
-          email: updatedUser.email,
-          profileImage: updatedUser.profileImage,
-
-          currentXP: updatedUser.xp,
-          currentCredits: updatedUser.credits,
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          profileImage: user.profileImage,
+          currentXP: user.xp,
+          currentCredits: user.credits,
         },
 
         pinInfo: {
@@ -1272,7 +1429,11 @@ export const solvePin = async (req, res) => {
       message: "Invalid action. Use stop or solve",
     });
   } catch (error) {
-    await session.abortTransaction();
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+
+    console.error(error);
 
     return res.status(500).json({
       success: false,
@@ -1484,6 +1645,9 @@ export const fakePin = async (req, res) => {
       }
     }
 
+    const updated_lavel = user.xp + travelXP;
+    await checkLevelUp(user, updated_lavel, session);
+
     user.xp += travelXP;
 
     await updateLeaderboardXP(user._id, travelXP, session);
@@ -1523,7 +1687,45 @@ export const fakePin = async (req, res) => {
     // COMMIT
     // ==========================================
 
+    // ==========================================
+    // PREPARE NOTIFICATIONS
+    // ==========================================
+
+    // Pin creator
+    const pinCreator = await User.findById(pin.createdBy)
+      .select("name fcmToken")
+      .session(session);
+
+    // Notification for the user who reported fake
+    const reporterNotification = {
+      tokens: user.fcmToken ? [user.fcmToken] : [],
+      title: "🚩 Fake Report Submitted",
+      body: `Your fake report has been submitted successfully. You earned ${travelXP} XP.`,
+      data: {
+        type: "PIN_REPORTED_FAKE",
+        pinId: pin._id.toString(),
+        xp: travelXP,
+      },
+    };
+
+    // Notification for the pin creator
+    const creatorNotification = {
+      tokens: pinCreator?.fcmToken ? [pinCreator.fcmToken] : [],
+      title: "🚩 Pin Reported",
+      body: `${user.name} reported your pin as fake.`,
+      data: {
+        type: "PIN_REPORTED_BY_USER",
+        pinId: pin._id.toString(),
+        reportedBy: user._id.toString(),
+      },
+    };
+
     await session.commitTransaction();
+
+    await Promise.all([
+      sendNotification(reporterNotification),
+      sendNotification(creatorNotification),
+    ]);
 
     return res.status(200).json({
       success: true,

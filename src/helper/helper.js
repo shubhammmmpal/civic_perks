@@ -1,16 +1,12 @@
 import UserLeaderBoardLog from "../model/userLeaderBoardLog.model.js";
 import User from "../model/user.model.js";
 import { xpSystem } from "../helper/constants.js";
-import Notification from "../model/notification.model.js"; 
+import Notification from "../model/notification.model.js";
 import { getLevelData } from "../helper/constants.js";
+import { messaging } from "../config/firebase.js";
 
 
-export const calculateDistanceInMeters = (
-  lat1,
-  lon1,
-  lat2,
-  lon2,
-) => {
+export const calculateDistanceInMeters = (lat1, lon1, lat2, lon2) => {
   const R = 6371e3;
 
   const toRad = (value) => (value * Math.PI) / 180;
@@ -23,23 +19,14 @@ export const calculateDistanceInMeters = (
 
   const a =
     Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-    Math.cos(φ1) *
-      Math.cos(φ2) *
-      Math.sin(Δλ / 2) *
-      Math.sin(Δλ / 2);
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
 
-  const c =
-    2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c;
 };
 
-
-export const updateLeaderboardXP = async (
-  userId,
-  xp,
-  session = null
-) => {
+export const updateLeaderboardXP = async (userId, xp, session = null) => {
   const now = new Date();
 
   const currentYear = now.getFullYear();
@@ -62,9 +49,7 @@ export const updateLeaderboardXP = async (
   // ==========================
   // YEAR
   // ==========================
-  let yearData = leaderboard.years.find(
-    (y) => y.year === currentYear
-  );
+  let yearData = leaderboard.years.find((y) => y.year === currentYear);
 
   if (!yearData) {
     leaderboard.years.push({
@@ -73,16 +58,13 @@ export const updateLeaderboardXP = async (
       months: [],
     });
 
-    yearData =
-      leaderboard.years[leaderboard.years.length - 1];
+    yearData = leaderboard.years[leaderboard.years.length - 1];
   }
 
   // ==========================
   // MONTH
   // ==========================
-  let monthData = yearData.months.find(
-    (m) => m.month === currentMonth
-  );
+  let monthData = yearData.months.find((m) => m.month === currentMonth);
 
   if (!monthData) {
     yearData.months.push({
@@ -91,16 +73,13 @@ export const updateLeaderboardXP = async (
       weeks: [],
     });
 
-    monthData =
-      yearData.months[yearData.months.length - 1];
+    monthData = yearData.months[yearData.months.length - 1];
   }
 
   // ==========================
   // WEEK
   // ==========================
-  let weekData = monthData.weeks.find(
-    (w) => w.week === currentWeek
-  );
+  let weekData = monthData.weeks.find((w) => w.week === currentWeek);
 
   if (!weekData) {
     monthData.weeks.push({
@@ -108,8 +87,7 @@ export const updateLeaderboardXP = async (
       points: 0,
     });
 
-    weekData =
-      monthData.weeks[monthData.weeks.length - 1];
+    weekData = monthData.weeks[monthData.weeks.length - 1];
   }
 
   // ==========================
@@ -122,7 +100,6 @@ export const updateLeaderboardXP = async (
 
   await leaderboard.save({ session });
 };
-
 
 export const getRandomBooster = () => {
   const random = Math.random();
@@ -142,7 +119,6 @@ export const getRandomBooster = () => {
   return "megaphone"; // 5%
 };
 
-
 export const updateLeaderboard = async (userId, points) => {
   const now = new Date();
 
@@ -150,13 +126,9 @@ export const updateLeaderboard = async (userId, points) => {
   const month = now.getMonth() + 1;
 
   const firstDayOfYear = new Date(year, 0, 1);
-  const week =
-    Math.ceil(
-      ((now - firstDayOfYear) / 86400000 +
-        firstDayOfYear.getDay() +
-        1) /
-        7
-    );
+  const week = Math.ceil(
+    ((now - firstDayOfYear) / 86400000 + firstDayOfYear.getDay() + 1) / 7,
+  );
 
   let log = await UserLeaderBoardLog.findOne({ userId });
 
@@ -170,7 +142,7 @@ export const updateLeaderboard = async (userId, points) => {
 
   log.totalPoints += points;
 
-  let yearObj = log.years.find(y => y.year === year);
+  let yearObj = log.years.find((y) => y.year === year);
 
   if (!yearObj) {
     yearObj = {
@@ -184,9 +156,7 @@ export const updateLeaderboard = async (userId, points) => {
 
   yearObj.yearlyPoints += points;
 
-  let monthObj = yearObj.months.find(
-    m => m.month === month
-  );
+  let monthObj = yearObj.months.find((m) => m.month === month);
 
   if (!monthObj) {
     monthObj = {
@@ -200,9 +170,7 @@ export const updateLeaderboard = async (userId, points) => {
 
   monthObj.monthlyPoints += points;
 
-  let weekObj = monthObj.weeks.find(
-    w => w.week === week
-  );
+  let weekObj = monthObj.weeks.find((w) => w.week === week);
 
   if (!weekObj) {
     weekObj = {
@@ -219,50 +187,38 @@ export const updateLeaderboard = async (userId, points) => {
 };
 
 export const processCreatorReward = async (route) => {
-
   if (route.rewardStatus?.creatorRewardGiven) {
     return;
   }
 
-  const approvedFriendsCount =
-    route.assignedFriends.filter(
-      friend => friend.status === "approved"
-    ).length;
+  const approvedFriendsCount = route.assignedFriends.filter(
+    (friend) => friend.status === "approved",
+  ).length;
 
   if (approvedFriendsCount === 0) {
     return;
   }
 
-  const requiredLikes =
-    Math.ceil(approvedFriendsCount * 0.5);
+  const requiredLikes = Math.ceil(approvedFriendsCount * 0.5);
 
-  const currentLikes =
-    route.likedBy.length;
+  const currentLikes = route.likedBy.length;
 
   if (currentLikes < requiredLikes) {
     return;
   }
 
-  const creatorRewardXp =
-    route.reward.creator.xpMultiplier * 100;
+  const creatorRewardXp = route.reward.creator.xpMultiplier * 100;
 
-  const creatorTrustScore =
-    route.reward.creator.trustScore;
+  const creatorTrustScore = route.reward.creator.trustScore;
 
-  await User.findByIdAndUpdate(
-    route.creatorId,
-    {
-      $inc: {
-        xp: creatorRewardXp,
-        trustScore: creatorTrustScore
-      }
-    }
-  );
+  await User.findByIdAndUpdate(route.creatorId, {
+    $inc: {
+      xp: creatorRewardXp,
+      trustScore: creatorTrustScore,
+    },
+  });
 
-  await updateLeaderboard(
-    route.creatorId,
-    creatorRewardXp
-  );
+  await updateLeaderboard(route.creatorId, creatorRewardXp);
 
   route.rewardStatus.creatorRewardGiven = true;
   route.rewardStatus.rewardedAt = new Date();
@@ -270,20 +226,34 @@ export const processCreatorReward = async (route) => {
   await route.save();
 };
 
-export const checkLevelUp = async (user, session = null) => {
-  const levelData = getLevelData(user.xp);
-
+export const checkLevelUp = async (user,updated_lavel, session = null) => {
+  console.log("entred");
+  const levelData = getLevelData(updated_lavel);
+  console.log(user.xp)
+console.log("''''''''''''''''''''''")
+console.log(user.level, levelData.level)
   // No level up
-  if (user.level >= levelData.level) {
+  if (user.level > levelData.level) {
     return false;
   }
 
+  console.log("-------------")
+
   const oldLevel = user.level;
+  console.log("==================")
 
   user.level = levelData.level;
+  console.log("++++++++++++++++")
   user.levelName = levelData.name;
 
-  await user.save({ session });
+  try {
+    await user.save({ session });
+    console.log("entered 2");
+  } catch (err) {
+    console.error("User save failed:", err);
+    throw err;
+  }
+  console.log("entered 2");
 
   await Notification.create(
     [
@@ -295,8 +265,10 @@ export const checkLevelUp = async (user, session = null) => {
         senderRole: "system",
       },
     ],
-    { session }
+    { session },
   );
+
+  console.log("entred 3");
 
   if (user.fcmToken) {
     try {
@@ -316,8 +288,83 @@ export const checkLevelUp = async (user, session = null) => {
     }
   }
 
+  console.log("entred 4");
+
   return {
     oldLevel,
     newLevel: levelData.level,
   };
+};
+
+
+// import admin from "../config/firebase.js";
+
+/**
+ * Send push notification to multiple users
+ *
+ * @param {Object} options
+ * @param {string[]} options.tokens
+ * @param {string} options.title
+ * @param {string} options.body
+ * @param {Object} options.data
+ */
+export const sendNotification = async ({
+  tokens = [],
+  title,
+  body,
+  data = {},
+}) => {
+  try {
+    // Remove invalid tokens
+    tokens = [...new Set(tokens.filter(Boolean))];
+
+    if (!tokens.length) {
+      return {
+        success: false,
+        message: "No valid FCM tokens found.",
+      };
+    }
+
+    const message = {
+      tokens,
+
+      notification: {
+        title,
+        body,
+      },
+
+      data: Object.entries(data).reduce((acc, [key, value]) => {
+        acc[key] = String(value);
+        return acc;
+      }, {}),
+    };
+
+    const response = await messaging.sendEachForMulticast(message);
+
+    console.log("Notifications sent:", response.successCount);
+    console.log("Notifications failed:", response.failureCount);
+
+    // Optional: Remove invalid tokens from DB
+    response.responses.forEach((resp, index) => {
+      if (!resp.success) {
+        console.error(
+          `Notification failed for token ${tokens[index]}`,
+          resp.error.message
+        );
+      }
+    });
+
+    return {
+      success: true,
+      successCount: response.successCount,
+      failureCount: response.failureCount,
+    };
+  } catch (error) {
+    console.error("FCM Notification Error:", error);
+
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
 };

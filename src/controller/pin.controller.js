@@ -7,6 +7,9 @@ import Activity from "../model/activity.model.js";
 import Inventory from "../model/inventory.model.js";
 import { updateLeaderboardXP } from "../helper/helper.js";
 import { validateSubscription } from "../helper/subscription.js";
+import { checkLevelUp } from "../helper/helper.js";
+import { calculateDistanceInMeters } from "../helper/helper.js";
+import { sendNotification } from "../helper/helper.js";
 
 // export const createPin = async (req, res) => {
 //   try {
@@ -180,6 +183,9 @@ export const createPin = async (req, res) => {
     // =========================================
     const xpReward = 10;
     user.credits = user.credits - pinBounty + 5;
+    const update_level = user.xp + xpReward
+    await checkLevelUp(user, update_level);
+
 
     user.xp += xpReward;
 
@@ -199,6 +205,23 @@ export const createPin = async (req, res) => {
     user.levelName = levelData.name;
 
     await user.save();
+
+    if (user.fcmToken) {
+      console.log(user.fcmToken)
+      console.log("get notification")
+  await sendNotification({
+    tokens: [user.fcmToken],
+    title: "🎉 Rewards Earned!",
+    body: `You earned ${xpReward} XP, +5 Credits and +0.1 Trust Score for creating a pin.`,
+    data: {
+      type: "PIN_REWARD",
+      pinId: newPin._id,
+      xp: xpReward,
+      credits: 5,
+      trustScore: 0.1,
+    },
+  });
+}
 
     // =========================================
     // UPDATE STATES
@@ -251,6 +274,44 @@ export const createPin = async (req, res) => {
 
       status: "completed",
     });
+
+
+    // Fetch users having valid coordinates
+const users = await User.find({
+  _id: { $ne: userId }, // Exclude pin creator
+  latitude: { $ne: null },
+  longitude: { $ne: null },
+  fcmToken: { $ne: null },
+});
+
+const nearbyUsers = users.filter((user) => {
+  const distance = calculateDistanceInMeters(
+    Number(latitude),
+    Number(longitude),
+    Number(user.latitude),
+    Number(user.longitude)
+  );
+
+  return distance <= 1609.34; // 1 mile
+});
+
+const tokens = nearbyUsers
+  .map((user) => user.fcmToken)
+  .filter(Boolean);
+
+console.log("Nearby users:", nearbyUsers.length);
+console.log("FCM Tokens:", tokens);
+
+await sendNotification({
+  tokens,
+  title: "📍 New Pin Nearby",
+  body: `${user.nickname} dropped a new pin near your location.`,
+  data: {
+    type: "NEW_PIN",
+    pinId: newPin._id,
+    userId: user._id,
+  },
+});
 
     return res.status(201).json({
       success: true,
