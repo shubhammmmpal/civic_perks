@@ -157,12 +157,18 @@ export const downloadUserPdf = async (req, res) => {
 console.log("Expected executable:", puppeteer.executablePath());
 
 const browser = await puppeteer.launch({
-  headless: true,
+  executablePath: '/usr/bin/google-chrome',  // or '/usr/bin/google-chrome-stable'
   args: [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--no-first-run',
+    '--no-zygote',
+    '--single-process',           // helps with memory on Render
+    '--disable-gpu'
   ],
+  headless: true,
 });
 
     const page = await browser.newPage();
