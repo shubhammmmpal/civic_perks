@@ -152,6 +152,10 @@ export const downloadUserPdf = async (req, res) => {
       // levelName: getLevelName(user.level), // optional
     });
 
+
+
+console.log("Expected executable:", puppeteer.executablePath());
+
 const browser = await puppeteer.launch({
   headless: true,
   args: [
