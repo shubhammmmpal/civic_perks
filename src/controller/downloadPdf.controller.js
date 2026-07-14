@@ -1,7 +1,8 @@
 import fs from "fs";
 import path from "path";
 import handlebars from "handlebars";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 import QRCode from "qrcode";
 
 import User from "../model/user.model.js";
@@ -14,16 +15,15 @@ handlebars.registerHelper("eq", function (a, b) {
 });
 
 export const downloadUserPdf = async (req, res) => {
+  let browser = null;
+
   try {
     const { userId } = req.params;
     const { startDate, endDate } = req.query;
-    const user = await User.findById(userId);
 
+    const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
+      return res.status(404).json({ success: false, message: "User not found" });
     }
 
     const stats = await States.findOne({ userId: user._id });
@@ -37,13 +37,10 @@ export const downloadUserPdf = async (req, res) => {
 
     let dateFilter = {};
     if (reportType === "FREE") {
-      // FREE: Only last 7 days
       const oneWeekAgo = new Date();
       oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
       dateFilter = { solvedAt: { $gte: oneWeekAgo } };
 
-      // Check download limit
       const alreadyDownloaded = await PdfDownload.findOne({
         user: user._id,
         reportType: "FREE",
@@ -53,86 +50,56 @@ export const downloadUserPdf = async (req, res) => {
       if (alreadyDownloaded) {
         return res.status(403).json({
           success: false,
-          message:
-            "Free Tier users can download their report only once every 7 days.",
+          message: "Free Tier users can download their report only once every 7 days.",
         });
       }
     } else if (reportType === "PRO" && startDate && endDate) {
-      // PRO: Allow custom date range
       const start = new Date(startDate);
       const end = new Date(endDate);
 
       if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid date format" });
+        return res.status(400).json({ success: false, message: "Invalid date format" });
       }
 
       dateFilter = { solvedAt: { $gte: start, $lte: end } };
     } else {
-      // HIGH or PRO without date range → default to last 365 days
       const oneYearAgo = new Date();
       oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
       dateFilter = { solvedAt: { $gte: oneYearAgo } };
     }
 
-    // ==================== NEW: Fetch Validations ====================
+    // Fetch Validations
     const validations = await Validation.find({
       $or: [
-        { validatedBy: user._id }, // User was the validator
-        { beneficiaries: user._id }, // User was a beneficiary
+        { validatedBy: user._id },
+        { beneficiaries: user._id },
       ],
     })
       .sort({ solvedAt: -1, createdAt: -1 })
-      .limit(6) // Show last 6 actions
-      .populate(
-        "pinID",
-        "title description location address category status images",
-      ) // adjust fields as per your Pin model
+      .limit(6)
+      .populate("pinID", "title description location address category status images")
       .populate("validatedBy", "name nickname")
       .populate("beneficiaries", "name nickname");
 
-    // Format for template
     const recentActions = validations.map((v) => ({
       id: v._id.toString(),
       date: v.solvedAt
-        ? v.solvedAt.toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })
+        ? v.solvedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
         : "Pending",
       title: v.pinID?.title || "Community Action",
       description: v.pinID?.description?.substring(0, 120) + "..." || "",
       category: v.pinID?.category || "General",
       status: v.status,
       validator: v.validatedBy?.nickname || v.validatedBy?.name || "Anonymous",
-      beneficiaries:
-        v.beneficiaries?.map((b) => b.nickname || b.name).filter(Boolean) || [],
+      beneficiaries: v.beneficiaries?.map((b) => b.nickname || b.name).filter(Boolean) || [],
       timeTaken: v.timeTaken || null,
     }));
 
-    // Determine report type
+    await PdfDownload.create({ user: user._id, reportType });
 
-    await PdfDownload.create({
-      user: user._id,
-      reportType,
-    });
-
-    // const qrCode = await QRCode.toDataURL(
-    //   JSON.stringify({
-    //     qrToken: user.qrToken,
-    //   }),
-    // );
-
-    const templatePath = path.join(
-      process.cwd(),
-      "templates",
-      "userProfile.hbs",
-    );
-
+    // Render HTML
+    const templatePath = path.join(process.cwd(), "templates", "userProfile.hbs");
     const source = fs.readFileSync(templatePath, "utf8");
-
     const template = handlebars.compile(source);
 
     const html = template({
@@ -143,60 +110,57 @@ export const downloadUserPdf = async (req, res) => {
       trustScore: user.trustScore || 0,
       level: user.level,
       tier: user.tier,
-      image: user.image, // if you want to use it
+      image: user.image,
       totalInterventions: stats?.pinsValidated ?? 0,
       totalHoursServed: stats?.hoursServed ?? 0,
-      qrCode: user.qrCode, // Assuming qrCode is a field in the User model
+      qrCode: user.qrCode,
       recentActions,
-      userId: user._id.toString(), // for Document ID in PRO
-      // levelName: getLevelName(user.level), // optional
+      userId: user._id.toString(),
     });
 
+    // ==================== PUPPETEER LAUNCH (Render Optimized) ====================
+    console.log("Launching Puppeteer with @sparticuz/chromium...");
 
-
-console.log("Expected executable:", puppeteer.executablePath());
-
-const browser = await puppeteer.launch({
-  executablePath: '/usr/bin/google-chrome',  // or '/usr/bin/google-chrome-stable'
-  args: [
-    '--no-sandbox',
-    '--disable-setuid-sandbox',
-    '--disable-dev-shm-usage',
-    '--disable-accelerated-2d-canvas',
-    '--no-first-run',
-    '--no-zygote',
-    '--single-process',           // helps with memory on Render
-    '--disable-gpu'
-  ],
-  headless: true,
-});
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
+      ignoreHTTPSErrors: true,
+    });
 
     const page = await browser.newPage();
-
-    await page.setContent(html, {
-      waitUntil: "networkidle0",
-    });
+    await page.setContent(html, { waitUntil: "networkidle0" });
 
     const pdfBuffer = await page.pdf({
       format: "A4",
       printBackground: true,
+      margin: { top: 20, right: 20, bottom: 20, left: 20 },
     });
 
     await browser.close();
+    browser = null;
 
     res.set({
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename=${user.name}.pdf`,
+      "Content-Disposition": `attachment; filename="${user.name.replace(/[^a-zA-Z0-9]/g, "_")}.pdf"`,
       "Content-Length": pdfBuffer.length,
     });
 
     return res.send(pdfBuffer);
   } catch (error) {
-    console.error(error);
-
+    console.error("PDF Generation Error:", error);
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message || "Failed to generate PDF",
     });
+  } finally {
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (e) {
+        console.error("Browser close error:", e);
+      }
+    }
   }
 };
