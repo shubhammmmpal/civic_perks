@@ -2,7 +2,7 @@ import express from "express";
 
 const router = express.Router();
 
-import { createPin,getAllPins,getPinById,getNearbyPins,changePinStatus } from "../controller/pin.controller.js";
+import { createPin,getAllPins,getPinById,getNearbyPins,changePinStatus,deletePin } from "../controller/pin.controller.js";
 
 
 // middleware (JWT auth)
@@ -30,5 +30,8 @@ router.get(
   protect,
   getNearbyPins
 );
+
+router.delete("/pins/:pinId",protect, deletePin);
+
 
 export default router;
