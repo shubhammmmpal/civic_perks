@@ -177,6 +177,17 @@ const PinSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    activePinMode: {
+  type: String,
+  enum: ["normal", "vanguard"],
+  default: "vanguard",
+},
+
+vanguardFakeReports: {
+  type: Number,
+  default: 0,
+},
     
 
     h3Index: {

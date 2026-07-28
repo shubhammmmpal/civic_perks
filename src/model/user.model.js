@@ -12,12 +12,12 @@ const userSchema = new mongoose.Schema(
       match: [/^\S+@\S+\.\S+$/, "Invalid email"],
     },
 
-  nickname: {
-    type: String,
-    unique: true,
-    index: true,
-    sparse: true,
-  },
+    nickname: {
+      type: String,
+      unique: true,
+      index: true,
+      sparse: true,
+    },
 
     name: { type: String, trim: true, default: "unnamed" },
     latitude: { type: Number, index: true },
@@ -43,7 +43,7 @@ const userSchema = new mongoose.Schema(
 
     subscriptionStatus: {
       type: String,
-      enum: ["active", "expired","none"],
+      enum: ["active", "expired", "none"],
       default: "none",
     },
 
@@ -110,7 +110,7 @@ const userSchema = new mongoose.Schema(
 
     level_milestone: {
       type: Number,
-      default: 100
+      default: 100,
     },
 
     qrCode: {
@@ -126,6 +126,17 @@ const userSchema = new mongoose.Schema(
     qrUrl: {
       type: String,
       default: null,
+    },
+
+    activeRadius: {
+      type: Number,
+      default: 1, // miles
+    },
+
+    activeMode: {
+      type: String,
+      enum: ["normal", "vanguard"],
+      default: "vanguard",
     },
 
     // Add these fields
@@ -200,7 +211,7 @@ userSchema.pre("save", function () {
   const currentXP = this.xp;
 
   // Find current level
-  const currentLevel = xpSystem.find(level => currentXP >= level.minXP);
+  const currentLevel = xpSystem.find((level) => currentXP >= level.minXP);
 
   if (currentLevel) {
     this.level = currentLevel.level;
@@ -211,7 +222,7 @@ userSchema.pre("save", function () {
   const nextLevel = xpSystem
     .slice()
     .reverse()
-    .find(level => level.minXP > currentXP);
+    .find((level) => level.minXP > currentXP);
 
   this.level_milestone = nextLevel ? nextLevel.minXP : null;
 });

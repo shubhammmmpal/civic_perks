@@ -4,6 +4,7 @@ import PaidPlan from '../model/paidPlans.model.js';
 import States from '../model/states.model.js';
 import Activity from "../model/activity.model.js";
 import { validateSubscription } from '../helper/subscription.js';
+import { calculateDistanceInMeters } from "../helper/helper.js";
 
 
 // export const updateProfile = async (req, res) => {
@@ -204,29 +205,139 @@ export const changeAccountType = async (req, res) => {
 
 export const activeUser = async (req, res) => {
   try {
-    const userId = req.user.id; 
-    // OR req.params.id
-    // depending on your auth middleware
-
+    const userId = req.user.id;
     const { latitude, longitude } = req.body;
 
-    // Validation
-    if (
-      latitude === undefined ||
-      longitude === undefined
-    ) {
+    // ==========================================
+    // VALIDATION
+    // ==========================================
+
+    if (latitude == null || longitude == null) {
       return res.status(400).json({
         success: false,
         message: "Latitude and longitude are required",
       });
     }
 
-    // Update user
+    // ==========================================
+    // FIND USER
+    // ==========================================
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // ==========================================
+    // CHECK ACTIVE SUBSCRIPTION
+    // ==========================================
+
+    const activeSubscription = await PaidPlan.findOne({
+      userID: userId,
+      planType: "subscription",
+      expiryDate: { $gt: new Date() },
+    }).sort({ expiryDate: -1 });
+
+    // ==========================================
+    // SET ACTIVE RADIUS
+    // ==========================================
+
+    let activeRadius = 1; // Free Tier = 1 Mile
+
+    if (
+      activeSubscription &&
+      ["Civic_Plus", "Civic_Pro"].includes(
+        activeSubscription.subscriptionType
+      )
+    ) {
+      activeRadius = 5; // Paid Plans = 5 Miles
+    }
+
+    // Convert Miles → Meters
+    const radiusInMeters = activeRadius * 1609.34;
+
+    // ==========================================
+    // UPDATE CURRENT USER LOCATION
+    // ==========================================
+
+    await User.findByIdAndUpdate(userId, {
+      latitude,
+      longitude,
+      activeAt: new Date(),
+      activeRadius,
+    });
+
+    // ==========================================
+    // CREATE BOUNDING BOX
+    // ==========================================
+
+    const latDiff = activeRadius / 69;
+
+    const lngDiff =
+      activeRadius /
+      (69 * Math.cos((latitude * Math.PI) / 180));
+
+    // ==========================================
+    // FIND ACTIVE USERS
+    // ==========================================
+
+    const activeUsers = await User.find({
+      _id: { $ne: userId },
+
+      latitude: {
+        $gte: latitude - latDiff,
+        $lte: latitude + latDiff,
+      },
+
+      longitude: {
+        $gte: longitude - lngDiff,
+        $lte: longitude + lngDiff,
+      },
+
+      activeAt: {
+        $gte: new Date(Date.now() - 5 * 60 * 1000), // Last 5 minutes
+      },
+    }).select("_id latitude longitude");
+
+    // ==========================================
+    // COUNT USERS INSIDE RADIUS
+    // ==========================================
+
+    let nearbyUsersCount = 0;
+
+    for (const otherUser of activeUsers) {
+      const distance = calculateDistanceInMeters(
+        latitude,
+        longitude,
+        otherUser.latitude,
+        otherUser.longitude
+      );
+
+      if (distance <= radiusInMeters) {
+        nearbyUsersCount++;
+      }
+    }
+
+    // ==========================================
+    // SET ACTIVE MODE
+    // ==========================================
+
+    const activeMode =
+      nearbyUsersCount > 5 ? "normal" : "vanguard";
+
+    // ==========================================
+    // UPDATE USER
+    // ==========================================
+
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       {
-        latitude,
-        longitude,
+        activeRadius,
+        activeMode,
         activeAt: new Date(),
       },
       {
@@ -234,25 +345,25 @@ export const activeUser = async (req, res) => {
       }
     ).select("-otp -otpExpiry");
 
-    if (!updatedUser) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
+    // ==========================================
+    // RESPONSE
+    // ==========================================
 
     return res.status(200).json({
       success: true,
-      message: "User activity updated",
+      message: "User activity updated successfully",
+      nearbyUsersCount,
+      activeRadius,
+      activeMode,
       data: updatedUser,
     });
-
   } catch (error) {
-    console.log("activeUser error:", error);
+    console.error("activeUser error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Server Error",
+      error: error.message,
     });
   }
 };

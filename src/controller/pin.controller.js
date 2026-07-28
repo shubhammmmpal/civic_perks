@@ -10,6 +10,7 @@ import { validateSubscription } from "../helper/subscription.js";
 import { checkLevelUp } from "../helper/helper.js";
 import { calculateDistanceInMeters } from "../helper/helper.js";
 import { sendNotification } from "../helper/helper.js";
+import PaidPlan from "../model/paidPlans.model.js";
 
 // export const createPin = async (req, res) => {
 //   try {
@@ -158,22 +159,85 @@ export const createPin = async (req, res) => {
     // CREATE PIN
     // =========================================
 
+    // =========================================
+    // DETERMINE CURRENT PIN MODE
+    // =========================================
+
+    // Check user's active subscription
+    const activePlan = await PaidPlan.findOne({
+      userID: userId,
+      planType: "subscription",
+      expiryDate: { $gt: new Date() },
+    }).sort({ expiryDate: -1 });
+
+    const activeRadius =
+      activePlan &&
+      ["Civic_Plus", "Civic_Pro"].includes(activePlan.subscriptionType)
+        ? 5
+        : 1;
+
+    const radiusInMeters = activeRadius * 1609.34;
+
+    // Bounding box
+    const latDiff = activeRadius / 69;
+    const lngDiff =
+      activeRadius / (69 * Math.cos((Number(latitude) * Math.PI) / 180));
+
+    // Active users within last 5 minutes
+    const activeUsers = await User.find({
+      _id: { $ne: userId },
+      latitude: {
+        $gte: Number(latitude) - latDiff,
+        $lte: Number(latitude) + latDiff,
+      },
+      longitude: {
+        $gte: Number(longitude) - lngDiff,
+        $lte: Number(longitude) + lngDiff,
+      },
+      activeAt: {
+        $gte: new Date(Date.now() - 5 * 60 * 1000),
+      },
+    }).select("latitude longitude");
+
+    let nearbyUserCount = 0;
+
+    for (const nearbyUser of activeUsers) {
+      const distance = calculateDistanceInMeters(
+        Number(latitude),
+        Number(longitude),
+        Number(nearbyUser.latitude),
+        Number(nearbyUser.longitude),
+      );
+
+      if (distance <= radiusInMeters) {
+        nearbyUserCount++;
+      }
+    }
+
+    const activeMode = nearbyUserCount >= 5 ? "normal" : "vanguard";
+
+    // Update latest mode on user
+    user.activeRadius = activeRadius;
+    user.activeMode = activeMode;
+
     const newPin = await Pin.create({
       questions,
-
       description,
-
       images: imageUrls,
-
       bounty: pinBounty,
-
       xpScore: totalXP,
-
       createdBy: userId,
+
+      activePinMode: activeMode,
+
+      pinStatus: activeMode === "vanguard" ? "verified" : "pending",
+
+      validationType: activeMode === "vanguard" ? "auto" : "community",
+
+      validatedBy: activeMode === "vanguard" ? userId : null,
 
       location: {
         type: "Point",
-
         coordinates: [Number(longitude), Number(latitude)],
       },
     });
@@ -183,9 +247,8 @@ export const createPin = async (req, res) => {
     // =========================================
     const xpReward = 10;
     user.credits = user.credits - pinBounty + 5;
-    const update_level = user.xp + xpReward
+    const update_level = user.xp + xpReward;
     await checkLevelUp(user, update_level);
-
 
     user.xp += xpReward;
 
@@ -207,21 +270,21 @@ export const createPin = async (req, res) => {
     await user.save();
 
     if (user.fcmToken) {
-      console.log(user.fcmToken)
-      console.log("get notification")
-  await sendNotification({
-    tokens: [user.fcmToken],
-    title: "🎉 Rewards Earned!",
-    body: `You earned ${xpReward} XP, +5 Credits and +0.1 Trust Score for creating a pin.`,
-    data: {
-      type: "PIN_REWARD",
-      pinId: newPin._id,
-      xp: xpReward,
-      credits: 5,
-      trustScore: 0.1,
-    },
-  });
-}
+      console.log(user.fcmToken);
+      console.log("get notification");
+      await sendNotification({
+        tokens: [user.fcmToken],
+        title: "🎉 Rewards Earned!",
+        body: `You earned ${xpReward} XP, +5 Credits and +0.1 Trust Score for creating a pin.`,
+        data: {
+          type: "PIN_REWARD",
+          pinId: newPin._id,
+          xp: xpReward,
+          credits: 5,
+          trustScore: 0.1,
+        },
+      });
+    }
 
     // =========================================
     // UPDATE STATES
@@ -275,43 +338,40 @@ export const createPin = async (req, res) => {
       status: "completed",
     });
 
-
     // Fetch users having valid coordinates
-const users = await User.find({
-  _id: { $ne: userId }, // Exclude pin creator
-  latitude: { $ne: null },
-  longitude: { $ne: null },
-  fcmToken: { $ne: null },
-});
+    const users = await User.find({
+      _id: { $ne: userId }, // Exclude pin creator
+      latitude: { $ne: null },
+      longitude: { $ne: null },
+      fcmToken: { $ne: null },
+    });
 
-const nearbyUsers = users.filter((user) => {
-  const distance = calculateDistanceInMeters(
-    Number(latitude),
-    Number(longitude),
-    Number(user.latitude),
-    Number(user.longitude)
-  );
+    const nearbyUsers = users.filter((user) => {
+      const distance = calculateDistanceInMeters(
+        Number(latitude),
+        Number(longitude),
+        Number(user.latitude),
+        Number(user.longitude),
+      );
 
-  return distance <= 1609.34; // 1 mile
-});
+      return distance <= 1609.34; // 1 mile
+    });
 
-const tokens = nearbyUsers
-  .map((user) => user.fcmToken)
-  .filter(Boolean);
+    const tokens = nearbyUsers.map((user) => user.fcmToken).filter(Boolean);
 
-console.log("Nearby users:", nearbyUsers.length);
-console.log("FCM Tokens:", tokens);
+    console.log("Nearby users:", nearbyUsers.length);
+    console.log("FCM Tokens:", tokens);
 
-await sendNotification({
-  tokens,
-  title: "📍 New Pin Nearby",
-  body: `${user.nickname} dropped a new pin near your location.`,
-  data: {
-    type: "NEW_PIN",
-    pinId: newPin._id,
-    userId: user._id,
-  },
-});
+    await sendNotification({
+      tokens,
+      title: "📍 New Pin Nearby",
+      body: `${user.nickname} dropped a new pin near your location.`,
+      data: {
+        type: "NEW_PIN",
+        pinId: newPin._id,
+        userId: user._id,
+      },
+    });
 
     return res.status(201).json({
       success: true,
@@ -544,13 +604,13 @@ export const getNearbyPins = async (req, res) => {
       inventory?.boosts?.XrayFilter?.active?.expiresAt &&
       inventory.boosts.XrayFilter.active.expiresAt > new Date();
 
-      const megaphoneActive =
-  inventory?.boosts?.megaphone?.active?.expiresAt &&
-  inventory.boosts.megaphone.active.expiresAt > new Date();
+    const megaphoneActive =
+      inventory?.boosts?.megaphone?.active?.expiresAt &&
+      inventory.boosts.megaphone.active.expiresAt > new Date();
 
-const goldenCargoActive =
-  inventory?.boosts?.goldenCargo?.active?.expiresAt &&
-  inventory.boosts.goldenCargo.active.expiresAt > new Date();
+    const goldenCargoActive =
+      inventory?.boosts?.goldenCargo?.active?.expiresAt &&
+      inventory.boosts.goldenCargo.active.expiresAt > new Date();
 
     // ==============================
     // GET NEARBY PINS
@@ -625,23 +685,21 @@ const goldenCargoActive =
     // ==============================
 
     return res.status(200).json({
-  success: true,
+      success: true,
 
-  tier: user.tier,
+      tier: user.tier,
 
-  radius: isGlobalAccess
-    ? "Global"
-    : `${radiusInMiles} Miles`,
+      radius: isGlobalAccess ? "Global" : `${radiusInMiles} Miles`,
 
-  radarFlareActive,
+      radarFlareActive,
 
-  xrayFilterActive,
-megaphoneActive,
-goldenCargoActive,
-  totalPins: nearbyPins.length,
+      xrayFilterActive,
+      megaphoneActive,
+      goldenCargoActive,
+      totalPins: nearbyPins.length,
 
-  data: nearbyPins
-});
+      data: nearbyPins,
+    });
   } catch (error) {
     console.log(error);
 
