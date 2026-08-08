@@ -90,11 +90,11 @@ import mongoose from "mongoose";
 export const submitZoneTag = async (req, res) => {
   try {
     const { hexagonId, category, latitude, longitude } = req.body;
-
     const userId = req.user.id;
-    const user = await User.findById(userId);
 
-    const userLevel = user.level;
+    // --------------------------------
+    // VALIDATION
+    // --------------------------------
 
     if (!hexagonId || !category) {
       return res.status(400).json({
@@ -122,20 +122,25 @@ export const submitZoneTag = async (req, res) => {
       });
     }
 
-    // Prevent duplicate reports
-    const existingReport = await ZoneReporter.findOne({
-      userId,
-      hexagonId,
-    });
+    // --------------------------------
+    // USER
+    // --------------------------------
 
-    // if (existingReport) {
-    //   return res.status(409).json({
-    //     success: false,
-    //     message: "You have already submitted a tag for this zone.",
-    //   });
-    // }
+    const user = await User.findById(userId);
 
-    // Create zone if missing
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const userLevel = user.level;
+
+    // --------------------------------
+    // FIND / CREATE ZONE
+    // --------------------------------
+
     let zone = await Zone.findOne({ hexagonId });
 
     if (!zone) {
@@ -144,26 +149,109 @@ export const submitZoneTag = async (req, res) => {
       });
     }
 
-    // Save report
-    await ZoneReporter.create({
-      zoneId: zone._id,
-      hexagonId,
+    // --------------------------------
+    // FIND EXISTING REPORT
+    // --------------------------------
+
+    const existingReport = await ZoneReporter.findOne({
       userId,
-      category,
-      voteWeight: userLevel,
-      userLevel,
-
-      gpsLocation: {
-        latitude,
-        longitude,
-      },
-
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      hexagonId,
     });
 
-    // -----------------------------
-    // RECALCULATE ZONE
-    // -----------------------------
+    let isNewTag = false;
+    let xpShouldBeAwarded = false;
+
+    // ================================================
+    // EXISTING REPORT
+    // ================================================
+
+    if (existingReport) {
+      // --------------------------------
+      // SAME CATEGORY
+      // --------------------------------
+
+      if (existingReport.category === category) {
+        return res.status(200).json({
+          success: true,
+          message: "You have already selected this tag for this zone.",
+          data: {
+            zone,
+            isNewTag: false,
+            xpAwarded: false,
+          },
+        });
+      }
+
+      // --------------------------------
+      // CHANGE CATEGORY
+      // --------------------------------
+
+      console.log("UPDATING EXISTING REPORT");
+
+      console.log({
+        reportId: existingReport._id,
+        userId,
+        hexagonId,
+        oldCategory: existingReport.category,
+        newCategory: category,
+      });
+
+      existingReport.category = category;
+
+      existingReport.gpsLocation = {
+        latitude,
+        longitude,
+      };
+
+      // IMPORTANT:
+      // Do not change voteWeight
+      // Do not change userLevel
+
+      await existingReport.save();
+
+      isNewTag = false;
+      xpShouldBeAwarded = false;
+    }
+
+    // ================================================
+    // NEW REPORT
+    // ================================================
+
+    else {
+      console.log("CREATING NEW REPORT");
+
+      console.log({
+        userId,
+        hexagonId,
+        category,
+      });
+
+      await ZoneReporter.create({
+        zoneId: zone._id,
+        hexagonId,
+        userId,
+        category,
+
+        voteWeight: userLevel,
+        userLevel,
+
+        gpsLocation: {
+          latitude,
+          longitude,
+        },
+
+        expiresAt: new Date(
+          Date.now() + 30 * 24 * 60 * 60 * 1000
+        ),
+      });
+
+      isNewTag = true;
+      xpShouldBeAwarded = true;
+    }
+
+    // ==================================================
+    // RECALCULATE ZONE FROM SCRATCH
+    // ==================================================
 
     const reports = await ZoneReporter.find({
       hexagonId,
@@ -183,56 +271,82 @@ export const submitZoneTag = async (req, res) => {
 
     let totalPoints = 0;
 
-    reports.forEach((report) => {
-      categoryPoints[report.category] += report.voteWeight;
+    for (const report of reports) {
+      if (categoryPoints[report.category] !== undefined) {
+        categoryPoints[report.category] += report.voteWeight;
 
-      totalPoints += report.voteWeight;
-    });
+        totalPoints += report.voteWeight;
+      }
+    }
+
+    // ==================================================
+    // FIND WINNING CATEGORY
+    // ==================================================
 
     let winningCategory = "mixed";
     let highestPoints = 0;
 
-    Object.entries(categoryPoints).forEach(([category, points]) => {
-      if (points > highestPoints) {
-        highestPoints = points;
-        winningCategory = category;
+    Object.entries(categoryPoints).forEach(
+      ([categoryName, points]) => {
+        if (points > highestPoints) {
+          highestPoints = points;
+          winningCategory = categoryName;
+        }
       }
-    });
+    );
+
+    // ==================================================
+    // CONFIDENCE
+    // ==================================================
 
     const confidenceScore =
       totalPoints > 0
-        ? Number(((highestPoints / totalPoints) * 100).toFixed(2))
+        ? Number(
+            ((highestPoints / totalPoints) * 100).toFixed(2)
+          )
         : 0;
 
-    const primaryCategory = winningCategory;
+    // ==================================================
+    // UPDATE ZONE
+    // ==================================================
 
-    zone = await Zone.findByIdAndUpdate(
-      zone._id,
-      {
-        categoryPoints,
-        totalPoints,
-        confidenceScore,
-        primaryCategory,
-        lastCalculatedAt: new Date(),
-      },
-      {
-        new: true,
-      },
-    );
+    zone.categoryPoints = categoryPoints;
+    zone.totalPoints = totalPoints;
+    zone.primaryCategory = winningCategory;
+    zone.confidenceScore = confidenceScore;
+    zone.lastCalculatedAt = new Date();
 
-    // -----------------------------
+    await zone.save();
+
+    // ==================================================
+    // XP
+    // ==================================================
+
+    if (xpShouldBeAwarded) {
+      // Your XP logic here
+      //
+      // await addXP(userId, 10);
+    }
+
+    // ==================================================
     // RESPONSE
-    // -----------------------------
+    // ==================================================
 
-    return res.status(201).json({
+    return res.status(isNewTag ? 201 : 200).json({
       success: true,
-      message: "Zone tag submitted successfully",
+
+      message: isNewTag
+        ? "Zone tag submitted successfully"
+        : "Zone tag updated successfully",
+
       data: {
         zone,
+        isNewTag,
+        xpAwarded: xpShouldBeAwarded,
       },
     });
   } catch (error) {
-    console.error(error);
+    console.error("submitZoneTag error:", error);
 
     return res.status(500).json({
       success: false,

@@ -69,6 +69,15 @@ const zoneReporterSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
+zoneReporterSchema.index(
+  {
+    userId: 1,
+    hexagonId: 1,
+  },
+  {
+    unique: true,
+  }
+);
 
 
 export default mongoose.model("ZoneReporter", zoneReporterSchema);
