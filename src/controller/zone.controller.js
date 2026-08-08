@@ -128,12 +128,12 @@ export const submitZoneTag = async (req, res) => {
       hexagonId,
     });
 
-    if (existingReport) {
-      return res.status(409).json({
-        success: false,
-        message: "You have already submitted a tag for this zone.",
-      });
-    }
+    // if (existingReport) {
+    //   return res.status(409).json({
+    //     success: false,
+    //     message: "You have already submitted a tag for this zone.",
+    //   });
+    // }
 
     // Create zone if missing
     let zone = await Zone.findOne({ hexagonId });
