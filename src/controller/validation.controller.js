@@ -13,7 +13,8 @@ import Megaphone from "../model/megaphone.model.js";
 import GoldenCargo from "../model/goldenCargo.model.js";
 import { updateLeaderboardXP } from "../helper/helper.js";
 import { checkLevelUp, sendNotification } from "../helper/helper.js";
-
+import { createNotification } from "../helper/helper.js";
+import Notification from "../model/notification.model.js";
 /*
 |--------------------------------------------------------------------------
 | VALIDATE PIN API
@@ -1887,9 +1888,12 @@ export const fakePin = async (req, res) => {
       pin.vanguardFakeReports = (pin.vanguardFakeReports || 0) + 1;
 
       // Fetch creator before possible deletion
+      // creatorForNotification = await User.findById(pin.createdBy)
+      //   .select("name fcmToken")
+      //   .session(session);
+
       creatorForNotification = await User.findById(pin.createdBy)
-        .select("name fcmToken")
-        .session(session);
+  .session(session);
 
       // ------------------------------------------
       // DELETE PIN AFTER 3 FAKE REPORTS
@@ -1921,8 +1925,8 @@ export const fakePin = async (req, res) => {
             // Recalculate level
             const levelData = getLevelData(creator.xp);
 
-            creator.level = levelData.level;
-            creator.levelName = levelData.name;
+            // creator.level = levelData.level;
+            // creator.levelName = levelData.name;
 
             await creator.save({ session });
 
@@ -2057,6 +2061,14 @@ export const fakePin = async (req, res) => {
       },
     };
 
+    await Notification.create({
+  title: reporterNotification.title,
+  description: reporterNotification.body,
+  notificationType: "private",
+  receivers: [user._id],
+  senderRole: "system",
+});
+
     // ==========================================
     // CREATOR NOTIFICATION
     // ==========================================
@@ -2123,6 +2135,16 @@ export const fakePin = async (req, res) => {
         };
       }
     }
+
+    if (creatorNotification) {
+  await Notification.create({
+    title: creatorNotification.title,
+    description: creatorNotification.body,
+    notificationType: "private",
+    receivers: [creatorForNotification._id],
+    senderRole: "system",
+  });
+}
 
     // ==========================================
     // COMMIT

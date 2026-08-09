@@ -520,6 +520,33 @@ export const sendNotification = async ({
   }
 };
 
+export const createNotification = async ({
+  title,
+  description,
+  notificationType = "private",
+  receivers = [],
+  senderRole = "system",
+}) => {
+  try {
+    if (!receivers.length) {
+      return null;
+    }
+
+    const notification = await Notification.create({
+      title,
+      description,
+      notificationType,
+      receivers,
+      senderRole,
+    });
+
+    return notification;
+  } catch (error) {
+    console.error("Create Notification Error:", error);
+    throw error;
+  }
+};
+
 
 export const getLevelUpNotification = ({
   level,
