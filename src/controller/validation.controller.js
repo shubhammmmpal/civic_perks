@@ -479,10 +479,10 @@ export const validatePin = async (req, res) => {
       // UPDATE LEVEL
       // =========================================
 
-      const levelData = getLevelData(user.xp);
+      // const levelData = getLevelData(user.xp);
 
-      user.level = levelData.level;
-      user.levelName = levelData.name;
+      // user.level = levelData.level;
+      // user.levelName = levelData.name;
 
       console.log("hit 1");
 
@@ -853,10 +853,10 @@ export const validatePin = async (req, res) => {
     // UPDATE LEVEL
     // =========================================
 
-    const levelData = getLevelData(user.xp);
+    // const levelData = getLevelData(user.xp);
 
-    user.level = levelData.level;
-    user.levelName = levelData.name;
+    // user.level = levelData.level;
+    // user.levelName = levelData.name;
 
     await user.save({ session });
 
@@ -1372,10 +1372,21 @@ export const solvePin = async (req, res) => {
       };
       await session.commitTransaction();
 
-      await Promise.all([
+      // await Promise.all([
+      //   sendNotification(solverNotification),
+      //   sendNotification(creatorNotification),
+      // ]);
+
+      const notifications = [
         sendNotification(solverNotification),
         sendNotification(creatorNotification),
-      ]);
+      ];
+
+      if (levelUpResult?.levelUp && levelUpResult.notification) {
+        notifications.push(sendNotification(levelUpResult.notification));
+      }
+
+      await Promise.all(notifications);
 
       // =================================================
       // RESPONSE
@@ -1865,17 +1876,30 @@ export const fakePin = async (req, res) => {
     // ==========================================
     // BRANCH: VANGUARD vs NORMAL
     // ==========================================
+
+    let creatorForNotification = null;
+
     if (isVanguard) {
       // ------------------------------------------
       // VANGUARD MODE
       // ------------------------------------------
+
       pin.vanguardFakeReports = (pin.vanguardFakeReports || 0) + 1;
 
-      // Delete pin after 3 fake reports
+      // Fetch creator before possible deletion
+      creatorForNotification = await User.findById(pin.createdBy)
+        .select("name fcmToken")
+        .session(session);
+
+      // ------------------------------------------
+      // DELETE PIN AFTER 3 FAKE REPORTS
+      // ------------------------------------------
+
       if (pin.vanguardFakeReports >= 3) {
         // ===== Creator penalty (once) =====
+
         if (!pin.creatorPenalized) {
-          const creator = await User.findById(pin.createdBy).session(session);
+          const creator = creatorForNotification;
 
           if (creator) {
             // -15 Trust Score
@@ -1884,26 +1908,25 @@ export const fakePin = async (req, res) => {
               Number((creator.trustScore - 15).toFixed(1)),
             );
 
+            // Ban if trust score is below 40
             if (creator.trustScore < 40) {
               creator.status = "banned";
             }
 
-            // Deduct XP & Credits that were instantly granted on pin creation
-            // ⚠️ Adjust these values to match what you actually grant
+            // Deduct XP granted during pin creation
             const instantXP = pin.xpScore || 0;
-            // const instantCredits = pin.bounty || 0;
 
             creator.xp = Math.max(0, creator.xp - instantXP);
-            // creator.credits = Math.max(0, (creator.credits || 0) - instantCredits);
 
-            // Re-calculate level after XP deduction
+            // Recalculate level
             const levelData = getLevelData(creator.xp);
+
             creator.level = levelData.level;
             creator.levelName = levelData.name;
 
             await creator.save({ session });
 
-            // Fine log
+            // Fine
             await Fine.create(
               [
                 {
@@ -1919,23 +1942,35 @@ export const fakePin = async (req, res) => {
           }
         }
 
-        // ===== HARD DELETE THE PIN =====
+        // ------------------------------------------
+        // HARD DELETE PIN
+        // ------------------------------------------
+
         await Pin.findByIdAndDelete(pin._id).session(session);
+
         pinDeleted = true;
       }
     } else {
       // ------------------------------------------
-      // NORMAL MODE (existing logic)
+      // NORMAL MODE
       // ------------------------------------------
+
       pin.pinScore -= 10;
 
       if (pin.pinScore <= -60) {
         pin.pinStatus = "fake";
       }
 
-      // Creator penalty when score reaches -60
+      // ------------------------------------------
+      // CREATOR PENALTY
+      // ------------------------------------------
+
       if (pin.pinScore <= -60 && !pin.creatorPenalized) {
-        const creator = await User.findById(pin.createdBy).session(session);
+        creatorForNotification = await User.findById(pin.createdBy)
+          .select("name fcmToken")
+          .session(session);
+
+        const creator = creatorForNotification;
 
         if (creator) {
           creator.trustScore = Math.max(
@@ -1979,9 +2014,9 @@ export const fakePin = async (req, res) => {
       Number((user.trustScore + 0.1).toFixed(1)),
     );
 
-    const levelData = getLevelData(user.xp);
-    user.level = levelData.level;
-    user.levelName = levelData.name;
+    // const levelData = getLevelData(user.xp);
+    // user.level = levelData.level;
+    // user.levelName = levelData.name;
 
     // ==========================================
     // COMPLETE ACTIVITY
@@ -2006,9 +2041,9 @@ export const fakePin = async (req, res) => {
     // ==========================================
     // PREPARE NOTIFICATIONS
     // ==========================================
-    const pinCreator = await User.findById(pin.createdBy)
-      .select("name fcmToken")
-      .session(session);
+    // const pinCreator = await User.findById(pin.createdBy)
+    //   .select("name fcmToken")
+    //   .session(session);
 
     const reporterNotification = {
       tokens: user.fcmToken ? [user.fcmToken] : [],
@@ -2022,32 +2057,90 @@ export const fakePin = async (req, res) => {
       },
     };
 
-    const creatorNotification = {
-      tokens: pinCreator?.fcmToken ? [pinCreator.fcmToken] : [],
-      title: pinDeleted
-        ? "🚩 Vanguard Pin Deleted"
-        : "🚩 Pin Reported",
-      body: pinDeleted
-        ? `Your vanguard pin was deleted after receiving 3 fake reports.`
-        : `${user.name} reported your pin as fake.`,
-      data: {
-        type: pinDeleted
-          ? "VANGUARD_PIN_DELETED"
-          : "PIN_REPORTED_BY_USER",
-        pinId: pin._id.toString(),
-        reportedBy: user._id.toString(),
-      },
-    };
+    // ==========================================
+    // CREATOR NOTIFICATION
+    // ==========================================
+
+    let creatorNotification = null;
+
+    if (creatorForNotification?.fcmToken) {
+      if (pinDeleted) {
+        // ========================================
+        // PIN DELETED
+        // ========================================
+
+        creatorNotification = {
+          tokens: [creatorForNotification.fcmToken],
+
+          title: "🚨 Vanguard Pin Deleted",
+
+          body: "Your Vanguard pin was deleted after receiving 3 fake reports.",
+
+          data: {
+            type: "VANGUARD_PIN_DELETED",
+
+            pinId: pin._id.toString(),
+
+            reason: "THREE_FAKE_REPORTS",
+
+            fakeReports: "3",
+          },
+        };
+      } else {
+        // ========================================
+        // PIN REPORTED
+        // ========================================
+
+        const fakeReports = pin.vanguardFakeReports || 0;
+
+        const remainingReports = isVanguard
+          ? Math.max(0, 3 - fakeReports)
+          : null;
+
+        creatorNotification = {
+          tokens: [creatorForNotification.fcmToken],
+
+          title: isVanguard ? "🚩 Vanguard Pin Reported" : "🚩 Pin Reported",
+
+          body: isVanguard
+            ? `Your Vanguard pin received a fake report. ${remainingReports} fake report${
+                remainingReports === 1 ? "" : "s"
+              } remaining before deletion.`
+            : `${user.name} reported your pin as fake.`,
+
+          data: {
+            type: isVanguard ? "VANGUARD_PIN_REPORTED" : "PIN_REPORTED_BY_USER",
+
+            pinId: pin._id.toString(),
+
+            reportedBy: user._id.toString(),
+
+            fakeReports: String(pin.vanguardFakeReports || 0),
+
+            remainingReports:
+              remainingReports !== null ? String(remainingReports) : "",
+          },
+        };
+      }
+    }
 
     // ==========================================
     // COMMIT
     // ==========================================
     await session.commitTransaction();
 
-    await Promise.all([
-      sendNotification(reporterNotification),
-      sendNotification(creatorNotification),
-    ]);
+    // await Promise.all([
+    //   sendNotification(reporterNotification),
+    //   sendNotification(creatorNotification),
+    // ]);
+
+    const notifications = [sendNotification(reporterNotification)];
+
+    if (creatorNotification) {
+      notifications.push(sendNotification(creatorNotification));
+    }
+
+    await Promise.all(notifications);
 
     return res.status(200).json({
       success: true,
