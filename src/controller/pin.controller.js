@@ -12,6 +12,7 @@ import { calculateDistanceInMeters } from "../helper/helper.js";
 import { sendNotification } from "../helper/helper.js";
 import PaidPlan from "../model/paidPlans.model.js";
 import { getLevelUpNotification } from "../helper/helper.js";
+import notificationModel from "../model/notification.model.js";
 
 // export const createPin = async (req, res) => {
 //   try {
@@ -280,22 +281,38 @@ const xpReward = 10;
 user.credits = user.credits - pinBounty + 5;
 
 // Store old level before adding XP
-const previousLevel = user.level;
+// const previousLevel = user.level;
 
 // Calculate new XP
-const updatedXP = user.xp + xpReward;
+// const updatedXP = user.xp + xpReward;
 
 // Existing level-up logic
-await checkLevelUp(user, updatedXP);
+// await checkLevelUp(user, updatedXP);
 
 // Update XP
-user.xp = updatedXP;
+// user.xp = updatedXP;
 
 // Calculate latest level
-const levelData = getLevelData(user.xp);
+// const levelData = getLevelData(user.xp);
 
-user.level = levelData.level;
-user.levelName = levelData.name;
+// user.level = levelData.level;
+// user.levelName = levelData.name;
+
+// Trust score
+// user.trustScore = Math.min(
+//   99.9,
+//   Number((user.trustScore + 0.1).toFixed(1)),
+// );
+
+// await user.save();
+
+
+
+// Calculate updated XP
+const updatedXP = user.xp + xpReward;
+
+// Update XP BEFORE checkLevelUp
+user.xp = updatedXP;
 
 // Trust score
 user.trustScore = Math.min(
@@ -303,6 +320,10 @@ user.trustScore = Math.min(
   Number((user.trustScore + 0.1).toFixed(1)),
 );
 
+// Check level up
+await checkLevelUp(user, updatedXP);
+
+// Save rewards
 await user.save();
 
 
@@ -329,30 +350,33 @@ await user.save();
     // }
 
 
+console.log("fldlfkjfdjfdn")
+// if (levelData.level > previousLevel && user.fcmToken) {
+//   const levelNotification = getLevelUpNotification({
+//     level: levelData.level,
+//     levelName: levelData.name,
+//     emoji: levelData.emoji,
+//   });
 
-if (levelData.level > previousLevel && user.fcmToken) {
-  const levelNotification = getLevelUpNotification({
-    level: levelData.level,
-    levelName: levelData.name,
-    emoji: levelData.emoji,
-  });
+//   console.log("title", levelNotification.title)
+//   console.log("body", levelNotification.body)
 
-  await sendNotification({
-    tokens: [user.fcmToken],
+//   await sendNotification({
+//     tokens: [user.fcmToken],
 
-    title: levelNotification.title,
+//     title: levelNotification.title,
 
-    body: levelNotification.body,
+//     body: levelNotification.body,
 
-    data: {
-      type: "LEVEL_UP",
-      level: String(levelData.level),
-      levelName: levelData.name,
-      emoji: levelData.emoji,
-      xp: String(user.xp),
-    },
-  });
-}
+//     data: {
+//       type: "LEVEL_UP",
+//       level: String(levelData.level),
+//       levelName: levelData.name,
+//       emoji: levelData.emoji,
+//       xp: String(user.xp),
+//     },
+//   });
+// }
 
     // =========================================
     // UPDATE STATES
@@ -405,6 +429,28 @@ if (levelData.level > previousLevel && user.fcmToken) {
 
       status: "completed",
     });
+
+    // =========================================
+// PIN CREATION NOTIFICATIONS
+// =========================================
+
+// ---------- 1. NOTIFY PIN CREATOR ----------
+if (user.fcmToken) {
+  console.log("notification to sended to user")
+  await sendNotification({
+    tokens: [user.fcmToken],
+    title: "🎉 Pin Created Successfully",
+    body: `Your pin "${description || "Pin"}" has been created successfully.`,
+    data: {
+      type: "PIN_CREATED",
+      pinId: String(newPin._id),
+      xp: String(xpReward),
+      credits: "5",
+      trustScore: "0.1",
+    },
+  });
+}
+
 
     // Fetch users having valid coordinates
     const users = await User.find({

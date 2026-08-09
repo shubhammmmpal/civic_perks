@@ -226,78 +226,229 @@ export const processCreatorReward = async (route) => {
   await route.save();
 };
 
-export const checkLevelUp = async (user,updated_lavel, session = null) => {
-  console.log("entred");
-  const levelData = getLevelData(updated_lavel);
-  console.log(user.xp)
-console.log("''''''''''''''''''''''")
-console.log(user.level, levelData.level)
-  // No level up
-  if (user.level > levelData.level) {
-    return false;
-  }
+// export const checkLevelUp = async (user,updated_lavel, session = null) => {
+//   console.log("entred");
+//   const levelData = getLevelData(updated_lavel);
+//   console.log(user.xp)
+// console.log("''''''''''''''''''''''")
+// console.log(user.level, levelData.level)
+//   // No level up
+//   if (user.level > levelData.level) {
+//     return false;
+//   }
 
-  console.log("-------------")
+//   console.log("-------------")
 
-  const oldLevel = user.level;
-  console.log("==================")
+//   const oldLevel = user.level;
+//   console.log("==================")
 
-  user.level = levelData.level;
-  console.log("++++++++++++++++")
-  user.levelName = levelData.name;
+//   user.level = levelData.level;
+//   console.log("++++++++++++++++")
+//   user.levelName = levelData.name;
 
-  try {
-    await user.save({ session });
-    console.log("entered 2");
-  } catch (err) {
-    console.error("User save failed:", err);
-    throw err;
-  }
-  console.log("entered 2");
+//   try {
+//     await user.save({ session });
+//     console.log("entered 2");
+//   } catch (err) {
+//     console.error("User save failed:", err);
+//     throw err;
+//   }
+//   console.log("entered 2");
 
-  await Notification.create(
-    [
-      {
-        title: "🎉 Level Up!",
-        description: `Congratulations! You reached Level ${levelData.level} (${levelData.name}).`,
-        notificationType: "private",
-        receivers: [user._id],
-        senderRole: "system",
-      },
-    ],
-    { session },
-  );
+//   await Notification.create(
+//     [
+//       {
+//         title: "🎉 Level Up!",
+//         description: `Congratulations! You reached Level ${levelData.level} (${levelData.name}).`,
+//         notificationType: "private",
+//         receivers: [user._id],
+//         senderRole: "system",
+//       },
+//     ],
+//     { session },
+//   );
 
-  console.log("entred 3");
+//   console.log("entred 3");
 
-  if (user.fcmToken) {
-    try {
-      await messaging.send({
-        token: user.fcmToken,
-        notification: {
-          title: "🎉 Level Up!",
-          body: `You reached Level ${levelData.level} (${levelData.name})`,
-        },
-        data: {
-          type: "LEVEL_UP",
-          level: String(levelData.level),
-        },
-      });
-    } catch (err) {
-      console.error(err);
-    }
-  }
+//   if (user.fcmToken) {
+//     try {
+//       await messaging.send({
+//         token: user.fcmToken,
+//         notification: {
+//           title: "🎉 Level Up!",
+//           body: `You reached Level ${levelData.level} (${levelData.name})`,
+//         },
+//         data: {
+//           type: "LEVEL_UP",
+//           level: String(levelData.level),
+//         },
+//       });
+//     } catch (err) {
+//       console.error(err);
+//     }
+//   }
 
-  console.log("entred 4");
+//   console.log("entred 4");
 
-  return {
-    oldLevel,
-    newLevel: levelData.level,
-  };
-};
+//   return {
+//     oldLevel,
+//     newLevel: levelData.level,
+//   };
+// };
 
 
 // import admin from "../config/firebase.js";
+
+
+export const checkLevelUp = async (
+  user,
+  updatedXP,
+  session = null
+) => {
+  try {
+    console.log("Checking level up...");
+
+    // =========================================
+    // GET NEW LEVEL DATA
+    // =========================================
+
+    const levelData = getLevelData(updatedXP);
+
+    console.log("Current XP:", user.xp);
+    console.log("Updated XP:", updatedXP);
+    console.log("Current Level:", user.level);
+    console.log("New Level:", levelData.level);
+
+    // =========================================
+    // NO LEVEL UP
+    // =========================================
+
+    if (levelData.level <= user.level) {
+      console.log("No level up");
+
+      return {
+        levelUp: false,
+        oldLevel: user.level,
+        newLevel: user.level,
+      };
+    }
+
+    // =========================================
+    // LEVEL UP
+    // =========================================
+
+    const oldLevel = user.level;
+    const newLevel = levelData.level;
+
+    console.log(
+      `LEVEL UP: ${oldLevel} → ${newLevel}`
+    );
+
+    // =========================================
+    // UPDATE USER LEVEL
+    // =========================================
+
+    user.level = newLevel;
+    user.levelName = levelData.name;
+
+    // =========================================
+    // SAVE USER
+    // =========================================
+
+    await user.save({ session });
+
+    // =========================================
+    // GET CUSTOM NOTIFICATION
+    // =========================================
+
+    const levelNotification = getLevelUpNotification({
+      level: levelData.level,
+      levelName: levelData.name,
+      emoji: levelData.emoji,
+    });
+
+    console.log("LEVEL NOTIFICATION");
+    console.log("Title:", levelNotification.title);
+    console.log("Body:", levelNotification.body);
+
+    // =========================================
+    // CREATE DATABASE NOTIFICATION
+    // =========================================
+
+    await Notification.create(
+      [
+        {
+          title: levelNotification.title,
+
+          description: levelNotification.body,
+
+          notificationType: "private",
+
+          receivers: [user._id],
+
+          senderRole: "system",
+        },
+      ],
+      { session }
+    );
+
+    // =========================================
+    // SEND FCM NOTIFICATION
+    // =========================================
+
+    if (user.fcmToken) {
+      try {
+        await messaging.send({
+          token: user.fcmToken,
+
+          notification: {
+            title: levelNotification.title,
+
+            body: levelNotification.body,
+          },
+
+          data: {
+            type: "LEVEL_UP",
+
+            level: String(levelData.level),
+
+            levelName: levelData.name,
+
+            emoji: levelData.emoji || "",
+
+            xp: String(updatedXP),
+          },
+        });
+
+        console.log("Level up FCM sent successfully");
+      } catch (err) {
+        console.error(
+          "Level up FCM failed:",
+          err
+        );
+      }
+    }
+
+    return {
+      levelUp: true,
+
+      oldLevel,
+
+      newLevel,
+
+      levelName: levelData.name,
+
+      emoji: levelData.emoji,
+    };
+  } catch (error) {
+    console.error(
+      "checkLevelUp error:",
+      error
+    );
+
+    throw error;
+  }
+};
 
 /**
  * Send push notification to multiple users
