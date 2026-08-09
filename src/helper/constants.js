@@ -63,27 +63,127 @@
 //   }
 // }
 
-export const xpSystem = [ 
-  { minXP: 250000, level: 20, name: "City Soul" }, 
-  { minXP: 150000, level: 19, name: "Grand Chancellor" }, 
-  { minXP: 100000, level: 18, name: "Paragon of Virtue" }, 
-  { minXP: 75000, level: 17, name: "Visionary" }, 
-  { minXP: 55000, level: 16, name: "Architect of Change" }, 
-  { minXP: 40000, level: 15, name: "Ambassador" }, 
-  { minXP: 30000, level: 14, name: "City Pillar" }, 
-  { minXP: 22000, level: 13, name: "Guardian" }, 
-  { minXP: 16000, level: 12, name: "Trailblazer" }, 
-  { minXP: 12000, level: 11, name: "District Ally" }, 
-  { minXP: 8500, level: 10, name: "Urban Scout" }, // Fixed from 85000 
-  { minXP: 6000, level: 9, name: "Advocate" }, 
-  { minXP: 4000, level: 8, name: "Civic Guide" }, 
-  { minXP: 2500, level: 7, name: "Street Steward" },
-  { minXP: 1500, level: 6, name: "Steward" }, 
-  { minXP: 1000, level: 5, name: "Contributor" },
-  { minXP: 600, level: 4, name: "Spotter" },
-  { minXP: 300, level: 3, name: "Reporter" }, 
-  { minXP: 100, level: 2, name: "Neighbor" }, 
-  { minXP: 0, level: 1, name: "Observer" } 
+export const xpSystem = [
+  {
+    minXP: 250000,
+    level: 20,
+    name: "City Soul",
+    emoji: "🔆",
+  },
+  {
+    minXP: 150000,
+    level: 19,
+    name: "Grand Chancellor",
+    emoji: "👑",
+  },
+  {
+    minXP: 100000,
+    level: 18,
+    name: "Paragon of Virtue",
+    emoji: "💠",
+  },
+  {
+    minXP: 75000,
+    level: 17,
+    name: "Visionary",
+    emoji: "🌟",
+  },
+  {
+    minXP: 55000,
+    level: 16,
+    name: "Architect of Change",
+    emoji: "📐",
+  },
+  {
+    minXP: 40000,
+    level: 15,
+    name: "Ambassador",
+    emoji: "⚖️",
+  },
+  {
+    minXP: 30000,
+    level: 14,
+    name: "City Pillar",
+    emoji: "🏛️",
+  },
+  {
+    minXP: 22000,
+    level: 13,
+    name: "Guardian",
+    emoji: "🛡️",
+  },
+  {
+    minXP: 16000,
+    level: 12,
+    name: "Trailblazer",
+    emoji: "🔥",
+  },
+  {
+    minXP: 12000,
+    level: 11,
+    name: "District Ally",
+    emoji: "🔗",
+  },
+  {
+    minXP: 8500,
+    level: 10,
+    name: "Urban Scout",
+    emoji: "🧭",
+  },
+  {
+    minXP: 6000,
+    level: 9,
+    name: "Advocate",
+    emoji: "📢",
+  },
+  {
+    minXP: 4000,
+    level: 8,
+    name: "Civic Guide",
+    emoji: "🗺️",
+  },
+  {
+    minXP: 2500,
+    level: 7,
+    name: "Street Warden",
+    emoji: "🔦",
+  },
+  {
+    minXP: 1500,
+    level: 6,
+    name: "Steward",
+    emoji: "📋",
+  },
+  {
+    minXP: 1000,
+    level: 5,
+    name: "Contributor",
+    emoji: "🤝",
+  },
+  {
+    minXP: 600,
+    level: 4,
+    name: "Spotter",
+    emoji: "🔍",
+  },
+  {
+    minXP: 300,
+    level: 3,
+    name: "Reporter",
+    emoji: "📝",
+  },
+  {
+    minXP: 100,
+    level: 2,
+    name: "Neighbor",
+    emoji: "👋",
+  },
+  {
+    minXP: 0,
+    level: 1,
+    name: "Observer",
+    emoji: "🌱",
+  },
 ];
 
 export const getLevelData = (xp) => {

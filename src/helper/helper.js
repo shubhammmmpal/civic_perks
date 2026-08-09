@@ -368,3 +368,88 @@ export const sendNotification = async ({
     };
   }
 };
+
+
+export const getLevelUpNotification = ({
+  level,
+  levelName,
+  emoji,
+}) => {
+  // =========================================
+  // BIG MILESTONES
+  // =========================================
+
+  if (level === 5) {
+    return {
+      title: "The observer becomes the builder.",
+      body: `Milestone reached: You are officially a verified ${levelName} ${emoji}. You’ve transitioned from simply recording data to actively shaping the physical reality of your neighborhood.`,
+    };
+  }
+
+  if (level === 15) {
+    return {
+      title: "A profound weight accepted.",
+      body: `You have unlocked the rank of ${levelName} ${emoji}. The scales of justice are in your hands—your moderation powers ("Jury Duty") are now live on the system. Rule with quiet clarity.`,
+    };
+  }
+
+  if (level === 20) {
+    return {
+      title: "You are the City Soul.",
+      body: `Absolute dedication achieved. You have ascended to ${levelName} ${emoji}. Thousands of hours, countless real-world actions. You are the living, breathing aura of the ecosystem.`,
+    };
+  }
+
+  // =========================================
+  // TIER 1 — LEVELS 1–5
+  // =========================================
+
+  if (level >= 1 && level <= 5) {
+    return {
+      title: "A new lens on your neighborhood",
+      body: `You are expanding your presence. You have unlocked Level ${levelName} ${emoji}. The streets around you are starting to notice your attention.`,
+    };
+  }
+
+  // =========================================
+  // TIER 2 — LEVELS 6–10
+  // =========================================
+
+  if (level >= 6 && level <= 10) {
+    return {
+      title: "Responsibility deepened",
+      body: `You are no longer just watching. As a ${levelName} ${emoji}, your efforts are actively piercing the blind spots of the city matrix. Check your private dashboard to see your footprint.`,
+    };
+  }
+
+  // =========================================
+  // TIER 3 — LEVELS 11–15
+  // =========================================
+
+  if (level >= 11 && level <= 15) {
+    return {
+      title: "A foundational pillar",
+      body: `The community map stands firmer because of your consistency. You have achieved the rank of ${levelName} ${emoji}. You are holding the local grid together.`,
+    };
+  }
+
+  // =========================================
+  // TIER 4 — LEVELS 16–20
+  // =========================================
+
+  if (level >= 16 && level <= 20) {
+    return {
+      title: "The matrix shifts",
+      body: `You aren't just navigating the city; you are fundamentally rewriting how it operates. You have ascended to ${levelName} ${emoji}. Your dedication radiates through the real world.`,
+    };
+  }
+
+  // =========================================
+  // FALLBACK
+  // =========================================
+
+  return {
+    title: "Level Up! 🎉",
+    body: `You reached Level ${level}: ${levelName} ${emoji}. Keep shaping your community.`,
+  };
+};

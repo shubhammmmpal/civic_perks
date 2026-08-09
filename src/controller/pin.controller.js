@@ -11,6 +11,7 @@ import { checkLevelUp } from "../helper/helper.js";
 import { calculateDistanceInMeters } from "../helper/helper.js";
 import { sendNotification } from "../helper/helper.js";
 import PaidPlan from "../model/paidPlans.model.js";
+import { getLevelUpNotification } from "../helper/helper.js";
 
 // export const createPin = async (req, res) => {
 //   try {
@@ -245,46 +246,113 @@ export const createPin = async (req, res) => {
     // =========================================
     // UPDATE USER REWARDS
     // =========================================
-    const xpReward = 10;
-    user.credits = user.credits - pinBounty + 5;
-    const update_level = user.xp + xpReward;
-    await checkLevelUp(user, update_level);
+    // const xpReward = 10;
+    // user.credits = user.credits - pinBounty + 5;
+    // const update_level = user.xp + xpReward;
+    // await checkLevelUp(user, update_level);
 
-    user.xp += xpReward;
+    // user.xp += xpReward;
+    
 
     // max trust score should not exceed 99.9
-    user.trustScore = Math.min(
-      99.9,
-      Number((user.trustScore + 0.1).toFixed(1)),
-    );
+    // user.trustScore = Math.min(
+    //   99.9,
+    //   Number((user.trustScore + 0.1).toFixed(1)),
+    // );
 
     // =========================================
     // LEVEL SYSTEM (OPTIONAL)
     // =========================================
 
-    const levelData = getLevelData(user.xp);
+    // const levelData = getLevelData(user.xp);
 
-    user.level = levelData.level;
-    user.levelName = levelData.name;
+    // user.level = levelData.level;
+    // user.levelName = levelData.name;
 
-    await user.save();
+    // await user.save();
 
-    if (user.fcmToken) {
-      console.log(user.fcmToken);
-      console.log("get notification");
-      await sendNotification({
-        tokens: [user.fcmToken],
-        title: "🎉 Rewards Earned!",
-        body: `You earned ${xpReward} XP, +5 Credits and +0.1 Trust Score for creating a pin.`,
-        data: {
-          type: "PIN_REWARD",
-          pinId: newPin._id,
-          xp: xpReward,
-          credits: 5,
-          trustScore: 0.1,
-        },
-      });
-    }
+    // =========================================
+// UPDATE USER REWARDS
+// =========================================
+
+const xpReward = 10;
+
+user.credits = user.credits - pinBounty + 5;
+
+// Store old level before adding XP
+const previousLevel = user.level;
+
+// Calculate new XP
+const updatedXP = user.xp + xpReward;
+
+// Existing level-up logic
+await checkLevelUp(user, updatedXP);
+
+// Update XP
+user.xp = updatedXP;
+
+// Calculate latest level
+const levelData = getLevelData(user.xp);
+
+user.level = levelData.level;
+user.levelName = levelData.name;
+
+// Trust score
+user.trustScore = Math.min(
+  99.9,
+  Number((user.trustScore + 0.1).toFixed(1)),
+);
+
+await user.save();
+
+
+    // =========================================
+// LEVEL UP NOTIFICATION
+// =========================================
+
+
+    // if (user.fcmToken) {
+    //   console.log(user.fcmToken);
+    //   console.log("get notification");
+    //   await sendNotification({
+    //     tokens: [user.fcmToken],
+    //     title: "🎉 Rewards Earned!",
+    //     body: `You earned ${xpReward} XP, +5 Credits and +0.1 Trust Score for creating a pin.`,
+    //     data: {
+    //       type: "PIN_REWARD",
+    //       pinId: newPin._id,
+    //       xp: xpReward,
+    //       credits: 5,
+    //       trustScore: 0.1,
+    //     },
+    //   });
+    // }
+
+
+
+if (levelData.level > previousLevel && user.fcmToken) {
+  const levelNotification = getLevelUpNotification({
+    level: levelData.level,
+    levelName: levelData.name,
+    emoji: levelData.emoji,
+  });
+
+  await sendNotification({
+    tokens: [user.fcmToken],
+
+    title: levelNotification.title,
+
+    body: levelNotification.body,
+
+    data: {
+      type: "LEVEL_UP",
+      level: String(levelData.level),
+      levelName: levelData.name,
+      emoji: levelData.emoji,
+      xp: String(user.xp),
+    },
+  });
+}
 
     // =========================================
     // UPDATE STATES
