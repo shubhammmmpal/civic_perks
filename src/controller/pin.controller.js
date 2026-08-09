@@ -12,7 +12,7 @@ import { calculateDistanceInMeters } from "../helper/helper.js";
 import { sendNotification } from "../helper/helper.js";
 import PaidPlan from "../model/paidPlans.model.js";
 import { getLevelUpNotification } from "../helper/helper.js";
-import notificationModel from "../model/notification.model.js";
+import Notification from "../model/notification.model.js";
 
 // export const createPin = async (req, res) => {
 //   try {
@@ -350,7 +350,6 @@ await user.save();
     // }
 
 
-console.log("fldlfkjfdjfdn")
 // if (levelData.level > previousLevel && user.fcmToken) {
 //   const levelNotification = getLevelUpNotification({
 //     level: levelData.level,
@@ -435,6 +434,19 @@ console.log("fldlfkjfdjfdn")
 // =========================================
 
 // ---------- 1. NOTIFY PIN CREATOR ----------
+
+// =========================================
+// CREATE NOTIFICATION FOR PIN CREATOR
+// =========================================
+
+await Notification.create({
+  title: "🎉 Pin Created Successfully",
+  description: `Your pin "${description || "Pin"}" has been created successfully. You earned ${xpReward} XP, 5 Credits and 0.1 Trust Score.`,
+  notificationType: "PIN_CREATED",
+  receivers: [userId],
+  senderRole: "system",
+  isRead: false,
+});
 if (user.fcmToken) {
   console.log("notification to sended to user")
   await sendNotification({
