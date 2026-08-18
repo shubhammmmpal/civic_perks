@@ -63,7 +63,7 @@ export const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id; // auth middleware se aayega
 
-    const { name, email, nickname } = req.body;
+    const { fullName, email, nickname, mobile, street, country } = req.body;
 
     // 👇 find user
     const user = await User.findById(userId);
@@ -97,12 +97,16 @@ export const updateProfile = async (req, res) => {
   user.nickname = nickname;
 }
     // ✏️ Update optional fields
-    if (name) user.name = name;
+    if (fullName) user.fullName = fullName;
+     if (street) user.street = street;
+     if (country) user.country = country;
+     if (mobile) user.mobile = mobile;
 
     // 🖼️ Image update (if using multer)
     if (req.file) {
       user.image = req.file.path; // ya cloud URL
     }
+
 
     await user.save();
 

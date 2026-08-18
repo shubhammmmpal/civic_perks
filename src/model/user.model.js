@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { xpSystem } from "../helper/constants.js";
+import { type } from "firebase/firestore/pipelines";
 const userSchema = new mongoose.Schema(
   {
     email: {
@@ -19,7 +20,18 @@ const userSchema = new mongoose.Schema(
       sparse: true,
     },
 
-    name: { type: String, trim: true, default: "unnamed" },
+    mobile: {
+      type: Number,
+
+    },
+    street:{
+      type: String,
+    },
+    country:{
+      type: String
+    },
+
+    fullName: { type: String, trim: true, default: "unnamed" },
     latitude: { type: Number, index: true },
     longitude: { type: Number, index: true },
     //   location: { type: String, index: true },
@@ -56,6 +68,7 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
 
     qrCode: String,
 
