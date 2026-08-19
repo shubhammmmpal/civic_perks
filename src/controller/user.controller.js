@@ -326,6 +326,14 @@ export const activeUser = async (req, res) => {
       }
     }
 
+    let activeUserTag = "no_user";
+
+if (nearbyUsersCount === 1) {
+  activeUserTag = "single_user";
+} else if (nearbyUsersCount > 1) {
+  activeUserTag = "multiple_user";
+}
+
     // ==========================================
     // SET ACTIVE MODE
     // ==========================================
@@ -356,6 +364,8 @@ export const activeUser = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "User activity updated successfully",
+        active_user_count: nearbyUsersCount,
+  active_user_tag: activeUserTag,
       nearbyUsersCount,
       activeRadius,
       activeMode,
