@@ -14,11 +14,12 @@ const boostLedgerSchema = new mongoose.Schema(
     boostType: {
       type: String,
       enum: [
-        "radarFlare","goldenCargo","megaphone","XrayFilter"
+        "radarFlare","goldenCargo","megaphone","XrayFilter","Double_XP","CreditMagnet","PioneerLuck","LongRangeRadar","MultiLock","FastTrackJury","TheBeacon","HexParty"
       ],
       required: true,
     },
 
+    
     quantity: {
       type: Number,
       required: true,

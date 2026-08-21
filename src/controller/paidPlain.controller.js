@@ -6,6 +6,8 @@ import GoldenCargo from "../model/goldenCargo.model.js";
 import BoostLedger from "../model/BoostLedger.model.js";
 import Pin from "../model/pin.model.js";
 import { BOOSTS } from "../helper/constants.js";
+import HexParty from "../model/hexParty.model.js";
+import MultiLock from '../model/multiLock.model.js'
 
 // const BOOST_COST = {
 //   "X-Ray Filter": 40,
@@ -72,7 +74,7 @@ export const purchaseBoost = async (req, res) => {
     if (!BOOSTS[boostType]) {
       return res.status(400).json({
         success: false,
-        message: "Invalid boost type"
+        message: "Invalid boost type",
       });
     }
 
@@ -80,7 +82,7 @@ export const purchaseBoost = async (req, res) => {
     if (!Number.isInteger(quantity) || quantity <= 0) {
       return res.status(400).json({
         success: false,
-        message: "Quantity must be greater than 0"
+        message: "Quantity must be greater than 0",
       });
     }
 
@@ -93,7 +95,7 @@ export const purchaseBoost = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User not found"
+        message: "User not found",
       });
     }
 
@@ -101,12 +103,12 @@ export const purchaseBoost = async (req, res) => {
     if (user.credits < totalPrice) {
       return res.status(400).json({
         success: false,
-        message: "Insufficient credits"
+        message: "Insufficient credits",
       });
     }
 
     const creditsBefore = user.credits;
-    
+
     // Deduct credits
     user.credits -= totalPrice;
     await user.save();
@@ -114,18 +116,18 @@ export const purchaseBoost = async (req, res) => {
     const creditsAfter = user.credits;
 
     await BoostLedger.create({
-    userId,
-    boostType,
-    quantity,
-    pricePerBoost: boost.price,
-    totalPrice,
-    creditsBefore,
-    creditsAfter,
-    // activatedAt: now,
-    // expiresAt,
-    transactionType: "PURCHASE",
-    status: "SUCCESS"
-});
+      userId,
+      boostType,
+      quantity,
+      pricePerBoost: boost.price,
+      totalPrice,
+      creditsBefore,
+      creditsAfter,
+      // activatedAt: now,
+      // expiresAt,
+      transactionType: "PURCHASE",
+      status: "SUCCESS",
+    });
 
     // Find/Create inventory
     let inventory = await Inventory.findOne({ userId });
@@ -140,7 +142,7 @@ export const purchaseBoost = async (req, res) => {
     const now = new Date();
 
     const expiresAt = new Date(
-      now.getTime() + boost.durationHours * 60 * 60 * 1000
+      now.getTime() + boost.durationHours * 60 * 60 * 1000,
     );
 
     // Activate boost
@@ -161,20 +163,18 @@ export const purchaseBoost = async (req, res) => {
         activatedAt: now,
         expiresAt,
         remainingCredits: user.credits,
-        currentQuantity: inventory.boosts[boostType].quantity
-      }
+        currentQuantity: inventory.boosts[boostType].quantity,
+      },
     });
-
   } catch (error) {
     console.log(error);
 
     return res.status(500).json({
       success: false,
-      message: "Server error"
+      message: "Server error",
     });
   }
 };
-
 
 export const useInventory = async (req, res) => {
   try {
@@ -220,8 +220,7 @@ export const useInventory = async (req, res) => {
     const now = new Date();
 
     const expiresAt = new Date(
-      now.getTime() +
-      BOOSTS[boostType].durationHours * 60 * 60 * 1000
+      now.getTime() + BOOSTS[boostType].durationHours * 60 * 60 * 1000,
     );
 
     boostItem.quantity -= 1;
@@ -251,7 +250,6 @@ export const useInventory = async (req, res) => {
     });
   }
 };
-
 
 export const useMegaphone = async (req, res) => {
   try {
@@ -299,8 +297,7 @@ export const useMegaphone = async (req, res) => {
     }
 
     const expiresAt = new Date(
-      now.getTime() +
-      BOOSTS.megaphone.durationHours * 60 * 60 * 1000
+      now.getTime() + BOOSTS.megaphone.durationHours * 60 * 60 * 1000,
     );
 
     // consume inventory
@@ -325,7 +322,7 @@ export const useMegaphone = async (req, res) => {
       {
         new: true,
         upsert: true,
-      }
+      },
     );
 
     return res.status(200).json({
@@ -342,7 +339,6 @@ export const useMegaphone = async (req, res) => {
     });
   }
 };
-
 
 export const useGoldenCargo = async (req, res) => {
   try {
@@ -380,8 +376,7 @@ export const useGoldenCargo = async (req, res) => {
     const activatedAt = new Date();
 
     const expiresAt = new Date(
-      activatedAt.getTime() +
-      BOOSTS.goldenCargo.durationHours * 60 * 60 * 1000
+      activatedAt.getTime() + BOOSTS.goldenCargo.durationHours * 60 * 60 * 1000,
     );
 
     const cargo = await GoldenCargo.create({
@@ -413,11 +408,402 @@ export const useGoldenCargo = async (req, res) => {
   }
 };
 
+export const useHexParty = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const { hexagonId } = req.body;
+
+    // =========================================
+    // VALIDATION
+    // =========================================
+
+    if (!hexagonId) {
+      return res.status(400).json({
+        success: false,
+        message: "Hexagon ID is required",
+      });
+    }
+
+    // =========================================
+    // GET INVENTORY
+    // =========================================
+
+    const inventory = await Inventory.findOne({ userId });
+
+    if (!inventory) {
+      return res.status(404).json({
+        success: false,
+        message: "Inventory not found",
+      });
+    }
+
+    // =========================================
+    // CHECK HEX-PARTY QUANTITY
+    // =========================================
+
+    if (inventory.boosts.HexParty.quantity <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No Hex-Party available",
+      });
+    }
+
+    // =========================================
+    // CHECK EXISTING HEX-PARTY
+    // =========================================
+
+    const existingHexParty = await HexParty.findOne({
+      hexagon_id: hexagonId,
+      expiryAt: { $gt: new Date() },
+    });
+
+    if (existingHexParty) {
+      return res.status(400).json({
+        success: false,
+        message: "Hex-Party is already active in this hexagon",
+        expiresAt: existingHexParty.expiryAt,
+      });
+    }
+
+    // =========================================
+    // ACTIVATE HEX-PARTY
+    // =========================================
+
+    const activatedAt = new Date();
+
+    const expiryAt = new Date(
+      activatedAt.getTime() +
+        BOOSTS.HexParty.durationHours * 60 * 60 * 1000,
+    );
+
+    // =========================================
+    // CREATE HEX-PARTY
+    // =========================================
+
+    const hexParty = await HexParty.create({
+      user_id: userId,
+      hexagon_id: hexagonId,
+      activatedAt,
+      expiryAt,
+    });
+
+    // =========================================
+    // UPDATE INVENTORY
+    // =========================================
+
+    inventory.boosts.HexParty.quantity -= 1;
+
+    inventory.boosts.HexParty.active = {
+      activatedAt,
+      expiresAt: expiryAt,
+      active: true,
+    };
+
+    await inventory.save();
+
+    // =========================================
+    // RESPONSE
+    // =========================================
+
+    return res.status(200).json({
+      success: true,
+      message: "Hex-Party activated successfully",
+      data: hexParty,
+    });
+  } catch (error) {
+    console.error("useHexParty error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const useFastTrackJury = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const inventory = await Inventory.findOne({ userId });
+
+    if (!inventory) {
+      return res.status(404).json({
+        success: false,
+        message: "Inventory not found",
+      });
+    }
+
+    const fastTrackJury = inventory.boosts.FastTrackJury;
+
+    // Check quantity
+    if (fastTrackJury.quantity <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No Fast Track Jury boost available",
+      });
+    }
+
+    const now = new Date();
+
+    // Check if already active
+    if (
+      fastTrackJury.active?.active &&
+      fastTrackJury.active.expiresAt &&
+      fastTrackJury.active.expiresAt > now
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Fast Track Jury is already active",
+        data: {
+          expiresAt: fastTrackJury.active.expiresAt,
+        },
+      });
+    }
+
+    // Duration from BOOSTS config
+    // const expiresAt = new Date(
+    //   now.getTime() +
+    //     BOOSTS.FastTrackJury.durationHours * 60 * 60 * 1000
+    // );
+
+    // Consume one boost
+    fastTrackJury.quantity -= 1;
+
+    // Activate boost
+    fastTrackJury.active = {
+      activatedAt: now,
+      // expiresAt,
+      active: true,
+    };
+
+    await inventory.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Fast Track Jury activated successfully",
+      data: {
+        activatedAt: now,
+        // expiresAt,
+        remainingQuantity: fastTrackJury.quantity,
+      },
+    });
+  } catch (error) {
+    console.error("useFastTrackJury error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+export const useBeacon = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const inventory = await Inventory.findOne({ userId });
+
+    if (!inventory) {
+      return res.status(404).json({
+        success: false,
+        message: "Inventory not found",
+      });
+    }
+
+    const beacon = inventory.boosts.TheBeacon;
+
+    // Check quantity
+    if (beacon.quantity <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No Beacon available",
+      });
+    }
+
+    const now = new Date();
+
+    // Check if already active
+    if (
+      beacon.active?.active 
+      // beacon.active?.expiresAt &&
+      // beacon.active.expiresAt > now
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Beacon is already active",
+        data: {
+          activatedAt: beacon.active.activatedAt,
+          expiresAt: beacon.active.expiresAt,
+        },
+      });
+    }
+
+    // Calculate expiry
+    // const expiresAt = new Date(
+    //   now.getTime() +
+    //     BOOSTS.TheBeacon.durationHours * 60 * 60 * 1000
+    // );
+
+    // Consume one Beacon
+    beacon.quantity -= 1;
+
+    // Activate Beacon
+    beacon.active = {
+      activatedAt: now,
+      // expiresAt,
+      active: true,
+    };
+
+    await inventory.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "The Beacon activated successfully",
+      data: {
+        activatedAt: now,
+        // expiresAt,
+        remainingQuantity: beacon.quantity,
+      },
+    });
+  } catch (error) {
+    console.error("useBeacon error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+export const useMultiLock = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // =========================================
+    // FIND INVENTORY
+    // =========================================
+
+    const inventory = await Inventory.findOne({ userId });
+
+    if (!inventory) {
+      return res.status(404).json({
+        success: false,
+        message: "Inventory not found",
+      });
+    }
+
+    const multiLockBoost = inventory.boosts?.MultiLock;
+
+    if (!multiLockBoost) {
+      return res.status(404).json({
+        success: false,
+        message: "MultiLock boost not found",
+      });
+    }
+
+    // =========================================
+    // CHECK QUANTITY
+    // =========================================
+
+    if (multiLockBoost.quantity <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No MultiLock boost available",
+      });
+    }
+
+    const now = new Date();
+
+    // =========================================
+    // CHECK ALREADY ACTIVE
+    // =========================================
+
+    if (
+      // multiLockBoost.active?.active &&
+      multiLockBoost.active?.expiresAt &&
+      new Date(multiLockBoost.active.expiresAt) > now
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "MultiLock is already active",
+        data: {
+          activatedAt: multiLockBoost.active.activatedAt,
+          expiresAt: multiLockBoost.active.expiresAt,
+        },
+      });
+    }
+
+    // =========================================
+    // CALCULATE EXPIRY
+    // =========================================
+
+    const durationHours = BOOSTS.MultiLock.durationHours;
+
+    const expiresAt = new Date(
+      now.getTime() + durationHours * 60 * 60 * 1000
+    );
+
+    // =========================================
+    // CONSUME BOOST
+    // =========================================
+
+    multiLockBoost.quantity -= 1;
+
+    // =========================================
+    // ACTIVATE BOOST
+    // =========================================
+
+    multiLockBoost.active = {
+      activatedAt: now,
+      expiresAt,
+      active: true,
+    };
+
+    // =========================================
+    // CREATE / UPDATE MULTILOCK
+    // =========================================
+
+    await MultiLock.findOneAndUpdate(
+      { userId },
+      {
+        userId,
+        activeAt: now,
+        expireAt: expiresAt,
+        activePinCount: 0,
+        activePins: [],
+      },
+      {
+        upsert: true,
+        new: true,
+      }
+    );
+
+    await inventory.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "MultiLock activated successfully",
+      data: {
+        activatedAt: now,
+        expiresAt,
+        remainingQuantity: multiLockBoost.quantity,
+        maxPins: 3,
+      },
+    });
+  } catch (error) {
+    console.error("useMultiLock error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
 
 export const getAllInventories = async (req, res) => {
   try {
-    const inventories = await Inventory.find()
-      .populate("userId", "name email");
+    const inventories = await Inventory.find().populate("userId", "name email");
 
     return res.status(200).json({
       success: true,
@@ -434,13 +820,14 @@ export const getAllInventories = async (req, res) => {
   }
 };
 
-
 export const getInventoryById = async (req, res) => {
   try {
     const { inventoryId } = req.params;
 
-    const inventory = await Inventory.findById(inventoryId)
-      .populate("userId", "name email");
+    const inventory = await Inventory.findById(inventoryId).populate(
+      "userId",
+      "name email",
+    );
 
     if (!inventory) {
       return res.status(404).json({
@@ -462,14 +849,15 @@ export const getInventoryById = async (req, res) => {
     });
   }
 };
-
 
 export const getInventoryByUserId = async (req, res) => {
   try {
     const { userId } = req.user._id;
 
-    const inventory = await Inventory.findOne({ userId })
-      .populate("userId", "name email");
+    const inventory = await Inventory.findOne({ userId }).populate(
+      "userId",
+      "name email",
+    );
 
     if (!inventory) {
       return res.status(404).json({
@@ -491,7 +879,6 @@ export const getInventoryByUserId = async (req, res) => {
     });
   }
 };
-
 
 export const getMyInventory = async (req, res) => {
   try {
@@ -519,7 +906,6 @@ export const getMyInventory = async (req, res) => {
     });
   }
 };
-
 
 export const deleteInventory = async (req, res) => {
   try {
@@ -550,18 +936,11 @@ export const deleteInventory = async (req, res) => {
   }
 };
 
-
 export const getBoostPurchaseHistory = async (req, res) => {
   try {
     const { id: userId, role } = req.user;
 
-    const {
-      search,
-      startDate,
-      endDate,
-      page = 1,
-      limit = 10,
-    } = req.query;
+    const { search, startDate, endDate, page = 1, limit = 10 } = req.query;
 
     const query = {};
 

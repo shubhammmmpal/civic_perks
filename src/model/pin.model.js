@@ -1,3 +1,4 @@
+import { type } from "firebase/firestore/pipelines";
 import mongoose from "mongoose";
 
 const AnswerSchema = new mongoose.Schema(
@@ -70,7 +71,7 @@ const PinSchema = new mongoose.Schema(
 
     pinStatus: {
       type: String,
-      enum: ["verified", "fake", "pending","rejected"],
+      enum: ["verified", "fake", "pending", "rejected"],
       default: "pending",
     },
 
@@ -138,8 +139,8 @@ const PinSchema = new mongoose.Schema(
     },
 
     fakeReportersPenalized: {
-    type: Boolean,
-    default: false,
+      type: Boolean,
+      default: false,
     },
 
     // =========================================
@@ -150,9 +151,9 @@ const PinSchema = new mongoose.Schema(
       enum: ["red", "orange", "green"],
       default: "red",
     },
-    pin_solve_time:{
+    pin_solve_time: {
       type: Number,
-      default: 0, 
+      default: 0,
     },
 
     // =========================================
@@ -179,16 +180,39 @@ const PinSchema = new mongoose.Schema(
     },
 
     activePinMode: {
-  type: String,
-  enum: ["normal", "vanguard"],
-  default: "vanguard",
-},
+      type: String,
+      enum: ["normal", "vanguard"],
+      default: "vanguard",
+    },
+    isFirstPin: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
 
-vanguardFakeReports: {
-  type: Number,
-  default: 0,
-},
-    
+    isBeacon: {
+      type:Boolean,
+      default:false
+    },
+    islocked:{
+      type: Boolean,
+      default: false
+    },
+    lockedBy:{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User"
+    },
+    lockExpiresAt: Date,
+
+    hexagonId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    vanguardFakeReports: {
+      type: Number,
+      default: 0,
+    },
 
     h3Index: {
       type: String,

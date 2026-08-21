@@ -4,7 +4,8 @@ import { xpSystem } from "../helper/constants.js";
 import Notification from "../model/notification.model.js";
 import { getLevelData } from "../helper/constants.js";
 import { messaging } from "../config/firebase.js";
-
+import Inventory from "../model/inventory.model.js";
+import HexParty from "../model/hexParty.model.js";
 
 export const calculateDistanceInMeters = (lat1, lon1, lat2, lon2) => {
   const R = 6371e3;
@@ -226,106 +227,19 @@ export const processCreatorReward = async (route) => {
   await route.save();
 };
 
-// export const checkLevelUp = async (user,updated_lavel, session = null) => {
-//   console.log("entred");
-//   const levelData = getLevelData(updated_lavel);
-//   console.log(user.xp)
-// console.log("''''''''''''''''''''''")
-// console.log(user.level, levelData.level)
-//   // No level up
-//   if (user.level > levelData.level) {
-//     return false;
-//   }
-
-//   console.log("-------------")
-
-//   const oldLevel = user.level;
-//   console.log("==================")
-
-//   user.level = levelData.level;
-//   console.log("++++++++++++++++")
-//   user.levelName = levelData.name;
-
-//   try {
-//     await user.save({ session });
-//     console.log("entered 2");
-//   } catch (err) {
-//     console.error("User save failed:", err);
-//     throw err;
-//   }
-//   console.log("entered 2");
-
-//   await Notification.create(
-//     [
-//       {
-//         title: "🎉 Level Up!",
-//         description: `Congratulations! You reached Level ${levelData.level} (${levelData.name}).`,
-//         notificationType: "private",
-//         receivers: [user._id],
-//         senderRole: "system",
-//       },
-//     ],
-//     { session },
-//   );
-
-//   console.log("entred 3");
-
-//   if (user.fcmToken) {
-//     try {
-//       await messaging.send({
-//         token: user.fcmToken,
-//         notification: {
-//           title: "🎉 Level Up!",
-//           body: `You reached Level ${levelData.level} (${levelData.name})`,
-//         },
-//         data: {
-//           type: "LEVEL_UP",
-//           level: String(levelData.level),
-//         },
-//       });
-//     } catch (err) {
-//       console.error(err);
-//     }
-//   }
-
-//   console.log("entred 4");
-
-//   return {
-//     oldLevel,
-//     newLevel: levelData.level,
-//   };
-// };
-
-
-// import admin from "../config/firebase.js";
-
-
-export const checkLevelUp = async (
-  user,
-  updatedXP,
-  session = null
-) => {
+export const checkLevelUp = async (user, updatedXP, session = null) => {
   try {
-    console.log("Checking level up...");
-
     // =========================================
     // GET NEW LEVEL DATA
     // =========================================
 
     const levelData = getLevelData(updatedXP);
 
-    console.log("Current XP:", user.xp);
-    console.log("Updated XP:", updatedXP);
-    console.log("Current Level:", user.level);
-    console.log("New Level:", levelData.level);
-
     // =========================================
     // NO LEVEL UP
     // =========================================
 
     if (levelData.level <= user.level) {
-      console.log("No level up");
-
       return {
         levelUp: false,
         oldLevel: user.level,
@@ -339,10 +253,6 @@ export const checkLevelUp = async (
 
     const oldLevel = user.level;
     const newLevel = levelData.level;
-
-    console.log(
-      `LEVEL UP: ${oldLevel} → ${newLevel}`
-    );
 
     // =========================================
     // UPDATE USER LEVEL
@@ -367,10 +277,6 @@ export const checkLevelUp = async (
       emoji: levelData.emoji,
     });
 
-    console.log("LEVEL NOTIFICATION");
-    console.log("Title:", levelNotification.title);
-    console.log("Body:", levelNotification.body);
-
     // =========================================
     // CREATE DATABASE NOTIFICATION
     // =========================================
@@ -389,7 +295,7 @@ export const checkLevelUp = async (
           senderRole: "system",
         },
       ],
-      { session }
+      { session },
     );
 
     // =========================================
@@ -419,13 +325,8 @@ export const checkLevelUp = async (
             xp: String(updatedXP),
           },
         });
-
-        console.log("Level up FCM sent successfully");
       } catch (err) {
-        console.error(
-          "Level up FCM failed:",
-          err
-        );
+        console.error("Level up FCM failed:", err);
       }
     }
 
@@ -441,24 +342,12 @@ export const checkLevelUp = async (
       emoji: levelData.emoji,
     };
   } catch (error) {
-    console.error(
-      "checkLevelUp error:",
-      error
-    );
+    console.error("checkLevelUp error:", error);
 
     throw error;
   }
 };
 
-/**
- * Send push notification to multiple users
- *
- * @param {Object} options
- * @param {string[]} options.tokens
- * @param {string} options.title
- * @param {string} options.body
- * @param {Object} options.data
- */
 export const sendNotification = async ({
   tokens = [],
   title,
@@ -492,15 +381,12 @@ export const sendNotification = async ({
 
     const response = await messaging.sendEachForMulticast(message);
 
-    console.log("Notifications sent:", response.successCount);
-    console.log("Notifications failed:", response.failureCount);
-
     // Optional: Remove invalid tokens from DB
     response.responses.forEach((resp, index) => {
       if (!resp.success) {
         console.error(
-          `Notification failed for token ${tokens[index]}`,
-          resp.error.message
+          // `Notification failed for token ${tokens[index]}`,
+          resp.error.message,
         );
       }
     });
@@ -547,12 +433,7 @@ export const createNotification = async ({
   }
 };
 
-
-export const getLevelUpNotification = ({
-  level,
-  levelName,
-  emoji,
-}) => {
+export const getLevelUpNotification = ({ level, levelName, emoji }) => {
   // =========================================
   // BIG MILESTONES
   // =========================================
@@ -630,4 +511,124 @@ export const getLevelUpNotification = ({
     title: "Level Up! 🎉",
     body: `You reached Level ${level}: ${levelName} ${emoji}. Keep shaping your community.`,
   };
+};
+
+// export const getActiveBoosts = async (userId) => {
+//   const inventory = await Inventory.findOne({ userId }).lean();
+
+//   if (!inventory) {
+//     return {
+//       radarFlare: false,
+//       goldenCargo: false,
+//       megaphone: false,
+//       XrayFilter: false,
+//       Double_XP: false,
+//       CreditMagnet: false,
+//       PioneerLuck: false,
+//       LongRangeRadar: false,
+//       MultiLock: false,
+//       FastTrackJury: false,
+//       TheBeacon: false,
+//       HexParty: false,
+//     };
+//   }
+
+//   const now = new Date();
+
+//   const boosts = inventory.boosts || {};
+
+//   const activeBoosts = {};
+
+//   for (const [boostName, boost] of Object.entries(boosts)) {
+//     activeBoosts[boostName] =
+//       !!boost?.active?.activatedAt &&
+//       !!boost?.active?.expiresAt &&
+//       now >= new Date(boost.active.activatedAt) &&
+//       now < new Date(boost.active.expiresAt);
+//   }
+
+//   return activeBoosts;
+// };
+
+export const getActiveBoosts = async (userId) => {
+  const inventory = await Inventory.findOne({ userId }).lean();
+
+  if (!inventory) {
+    return {};
+  }
+
+  const now = new Date();
+  const activeBoosts = {};
+
+  for (const [boostName, boost] of Object.entries(inventory.boosts || {})) {
+    const active = boost?.active;
+    console.log('hit-1')
+    // if (!active?.active) {
+    //   activeBoosts[boostName] = false;
+    //   continue;
+    // }
+
+    console.log('hit-2')
+
+    // Pin based boosts
+    if (["FastTrackJury", "TheBeacon"].includes(boostName)) {
+      activeBoosts[boostName] = active?.active === true;
+      continue;
+    }
+    console.log('hit-3')
+    // Duration based boosts
+    activeBoosts[boostName] =
+    // active?.active === true &&
+      !!active.activatedAt &&
+      !!active.expiresAt &&
+      now >= new Date(active.activatedAt) &&
+      now < new Date(active.expiresAt);
+  }
+
+  return activeBoosts;
+};
+
+export const isHexPartyActive = async (hexagonId) => {
+  if (!hexagonId) {
+    return false;
+  }
+
+  const now = new Date();
+
+  const hexParty = await HexParty.findOne({
+    hexagon_id: hexagonId,
+    activatedAt: { $lte: now },
+    expiryAt: { $gt: now },
+  }).lean();
+
+  return !!hexParty;
+};
+
+export const calculateXPWithBoosts = ({
+  baseXP,
+  doubleXP = false,
+  hexParty = false,
+}) => {
+  let multiplier = 1;
+
+  if (doubleXP) {
+    multiplier *= 2;
+  }
+
+  if (hexParty) {
+    multiplier *= 1.1;
+  }
+
+  return Math.round(baseXP * multiplier);
+};
+
+export const calculateCreditBountyWithBoost = ({
+  bounty,
+  creditMagnet = false,
+}) => {
+  if (!creditMagnet) {
+    return bounty;
+  }
+
+  return Math.round(bounty * 1.25);
 };

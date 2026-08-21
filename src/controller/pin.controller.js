@@ -5,84 +5,24 @@ import User from "../model/user.model.js";
 import { getLevelData, XP_CONFIG } from "../helper/constants.js";
 import Activity from "../model/activity.model.js";
 import Inventory from "../model/inventory.model.js";
-import { updateLeaderboardXP } from "../helper/helper.js";
+import {
+  updateLeaderboardXP,
+  getActiveBoosts,
+  isHexPartyActive,
+  calculateXPWithBoosts,
+  checkLevelUp,
+  calculateDistanceInMeters,
+  sendNotification,
+  getLevelUpNotification,
+} from "../helper/helper.js";
 import { validateSubscription } from "../helper/subscription.js";
-import { checkLevelUp } from "../helper/helper.js";
-import { calculateDistanceInMeters } from "../helper/helper.js";
-import { sendNotification } from "../helper/helper.js";
 import PaidPlan from "../model/paidPlans.model.js";
-import { getLevelUpNotification } from "../helper/helper.js";
 import Notification from "../model/notification.model.js";
-
-// export const createPin = async (req, res) => {
-//   try {
-//     console.log("BODY:", req.body);
-//     console.log("FILES:", req.files);
-
-//     const {
-//       description,
-//       bounty,
-//       xpScore,
-//       latitude,
-//       longitude
-//     } = req.body || {};
-
-//     const userId = req.user?.id;
-
-//     // parse questions
-//     let questions = [];
-//     if (req.body.questions) {
-//       questions = JSON.parse(req.body.questions);
-//     }
-
-//     if (!questions.length) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Questions are required"
-//       });
-//     }
-
-//     const imageUrls =
-//       req.files?.map(file => file.path || file.filename) || [];
-
-//     const newPin = await Pin.create({
-//       questions,
-//       description,
-//       images: imageUrls,
-//       bounty: bounty || 0,
-//       xpScore: xpScore || 0,
-//       createdBy: userId,
-//       location: {
-//         // type: "Point",
-//         latitude,
-//         longitude,
-//         // coordinates: [Number(longitude), Number(latitude)]
-//       }
-
-//     });
-
-//     res.status(201).json({
-//       success: true,
-//       message: "Pin created successfully",
-//       data: newPin
-//     });
-
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Server error",
-//       error: error.message
-//     });
-//   }
-// };
 
 export const createPin = async (req, res) => {
   try {
-    console.log("BODY:", req.body);
-    console.log("FILES:", req.files);
-
-    const { description, bounty, latitude, longitude } = req.body || {};
+    const { description, bounty, latitude, longitude, hexagonId } =
+      req.body || {};
 
     const userId = req.user?.id;
 
@@ -110,18 +50,18 @@ export const createPin = async (req, res) => {
       });
     }
 
+    const activeBoosts = await getActiveBoosts(userId);
+
+    const hexPartyActive = await isHexPartyActive(hexagonId);
+
+    console.log("active boosts", activeBoosts);
+    console.log("hax party active", hexPartyActive);
+
     // =========================================
     // CHECK USER CREDITS
     // =========================================
 
     const pinBounty = Number(bounty) || 0;
-
-    // if (user.credits < pinBounty) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: "Insufficient credits to create pin",
-    //   });
-    // }
 
     // =========================================
     // PARSE QUESTIONS
@@ -222,13 +162,20 @@ export const createPin = async (req, res) => {
     user.activeRadius = activeRadius;
     user.activeMode = activeMode;
 
+    const existingPin = await Pin.findOne({ hexagonId }).select("_id");
+
+    const isFirstPin = !existingPin;
+
     const newPin = await Pin.create({
       questions,
       description,
+      hexagonId,
       images: imageUrls,
       bounty: pinBounty,
       xpScore: totalXP,
       createdBy: userId,
+
+      isFirstPin,
 
       activePinMode: activeMode,
 
@@ -244,138 +191,34 @@ export const createPin = async (req, res) => {
       },
     });
 
-    // =========================================
-    // UPDATE USER REWARDS
-    // =========================================
-    // const xpReward = 10;
-    // user.credits = user.credits - pinBounty + 5;
-    // const update_level = user.xp + xpReward;
-    // await checkLevelUp(user, update_level);
+    const baseXPReward = 10;
 
-    // user.xp += xpReward;
-    
+    const xpReward = calculateXPWithBoosts({
+      baseXP: baseXPReward,
+      doubleXP: activeBoosts.Double_XP,
+      hexParty: hexPartyActive,
+    });
+    console.log("base rewards", baseXPReward);
+    console.log("xp-rewards", xpReward);
 
-    // max trust score should not exceed 99.9
-    // user.trustScore = Math.min(
-    //   99.9,
-    //   Number((user.trustScore + 0.1).toFixed(1)),
-    // );
+    user.credits = user.credits - pinBounty + 5;
 
-    // =========================================
-    // LEVEL SYSTEM (OPTIONAL)
-    // =========================================
+    const updatedXP = user.xp + xpReward;
 
-    // const levelData = getLevelData(user.xp);
+    // Update XP BEFORE checkLevelUp
+    user.xp = updatedXP;
 
-    // user.level = levelData.level;
-    // user.levelName = levelData.name;
+    // Trust score
+    user.trustScore = Math.min(
+      99.9,
+      Number((user.trustScore + 0.1).toFixed(1)),
+    );
 
-    // await user.save();
+    // Check level up
+    await checkLevelUp(user, updatedXP);
 
-    // =========================================
-// UPDATE USER REWARDS
-// =========================================
-
-const xpReward = 10;
-
-user.credits = user.credits - pinBounty + 5;
-
-// Store old level before adding XP
-// const previousLevel = user.level;
-
-// Calculate new XP
-// const updatedXP = user.xp + xpReward;
-
-// Existing level-up logic
-// await checkLevelUp(user, updatedXP);
-
-// Update XP
-// user.xp = updatedXP;
-
-// Calculate latest level
-// const levelData = getLevelData(user.xp);
-
-// user.level = levelData.level;
-// user.levelName = levelData.name;
-
-// Trust score
-// user.trustScore = Math.min(
-//   99.9,
-//   Number((user.trustScore + 0.1).toFixed(1)),
-// );
-
-// await user.save();
-
-
-
-// Calculate updated XP
-const updatedXP = user.xp + xpReward;
-
-// Update XP BEFORE checkLevelUp
-user.xp = updatedXP;
-
-// Trust score
-user.trustScore = Math.min(
-  99.9,
-  Number((user.trustScore + 0.1).toFixed(1)),
-);
-
-// Check level up
-await checkLevelUp(user, updatedXP);
-
-// Save rewards
-await user.save();
-
-
-    // =========================================
-// LEVEL UP NOTIFICATION
-// =========================================
-
-
-    // if (user.fcmToken) {
-    //   console.log(user.fcmToken);
-    //   console.log("get notification");
-    //   await sendNotification({
-    //     tokens: [user.fcmToken],
-    //     title: "🎉 Rewards Earned!",
-    //     body: `You earned ${xpReward} XP, +5 Credits and +0.1 Trust Score for creating a pin.`,
-    //     data: {
-    //       type: "PIN_REWARD",
-    //       pinId: newPin._id,
-    //       xp: xpReward,
-    //       credits: 5,
-    //       trustScore: 0.1,
-    //     },
-    //   });
-    // }
-
-
-// if (levelData.level > previousLevel && user.fcmToken) {
-//   const levelNotification = getLevelUpNotification({
-//     level: levelData.level,
-//     levelName: levelData.name,
-//     emoji: levelData.emoji,
-//   });
-
-//   console.log("title", levelNotification.title)
-//   console.log("body", levelNotification.body)
-
-//   await sendNotification({
-//     tokens: [user.fcmToken],
-
-//     title: levelNotification.title,
-
-//     body: levelNotification.body,
-
-//     data: {
-//       type: "LEVEL_UP",
-//       level: String(levelData.level),
-//       levelName: levelData.name,
-//       emoji: levelData.emoji,
-//       xp: String(user.xp),
-//     },
-//   });
-// }
+    // Save rewards
+    await user.save();
 
     // =========================================
     // UPDATE STATES
@@ -430,39 +273,37 @@ await user.save();
     });
 
     // =========================================
-// PIN CREATION NOTIFICATIONS
-// =========================================
+    // PIN CREATION NOTIFICATIONS
+    // =========================================
 
-// ---------- 1. NOTIFY PIN CREATOR ----------
+    // ---------- 1. NOTIFY PIN CREATOR ----------
 
-// =========================================
-// CREATE NOTIFICATION FOR PIN CREATOR
-// =========================================
+    // =========================================
+    // CREATE NOTIFICATION FOR PIN CREATOR
+    // =========================================
 
-await Notification.create({
-  title: "🎉 Pin Created Successfully",
-  description: `Your pin "${description || "Pin"}" has been created successfully. You earned ${xpReward} XP, 5 Credits and 0.1 Trust Score.`,
-  notificationType: "PIN_CREATED",
-  receivers: [userId],
-  senderRole: "system",
-  isRead: false,
-});
-if (user.fcmToken) {
-  console.log("notification to sended to user")
-  await sendNotification({
-    tokens: [user.fcmToken],
-    title: "🎉 Pin Created Successfully",
-    body: `Your pin "${description || "Pin"}" has been created successfully.`,
-    data: {
-      type: "PIN_CREATED",
-      pinId: String(newPin._id),
-      xp: String(xpReward),
-      credits: "5",
-      trustScore: "0.1",
-    },
-  });
-}
-
+    await Notification.create({
+      title: "🎉 Pin Created Successfully",
+      description: `Your pin "${description || "Pin"}" has been created successfully. You earned ${xpReward} XP, 5 Credits and 0.1 Trust Score.`,
+      notificationType: "PIN_CREATED",
+      receivers: [userId],
+      senderRole: "system",
+      isRead: false,
+    });
+    if (user.fcmToken) {
+      await sendNotification({
+        tokens: [user.fcmToken],
+        title: "🎉 Pin Created Successfully",
+        body: `Your pin "${description || "Pin"}" has been created successfully.`,
+        data: {
+          type: "PIN_CREATED",
+          pinId: String(newPin._id),
+          xp: String(xpReward),
+          credits: "5",
+          trustScore: "0.1",
+        },
+      });
+    }
 
     // Fetch users having valid coordinates
     const users = await User.find({
@@ -484,9 +325,6 @@ if (user.fcmToken) {
     });
 
     const tokens = nearbyUsers.map((user) => user.fcmToken).filter(Boolean);
-
-    console.log("Nearby users:", nearbyUsers.length);
-    console.log("FCM Tokens:", tokens);
 
     await sendNotification({
       tokens,
@@ -511,6 +349,8 @@ if (user.fcmToken) {
       },
 
       remainingCredits: user.credits,
+      activeBoosts,
+      hexPartyActive,
     });
   } catch (error) {
     console.error(error);
@@ -689,16 +529,6 @@ export const getNearbyPins = async (req, res) => {
     // RADIUS LOGIC
     // ==============================
 
-    //     let radiusInMiles = 1;
-
-    // const radarFlareActive =
-    //   inventory?.boosts?.radarFlare?.active?.expiresAt &&
-    //   inventory.boosts.radarFlare.active.expiresAt > new Date();
-
-    //     if (radarFlareActive) {
-    //       radiusInMiles = 5;
-    //     }
-
     const radarFlareActive =
       inventory?.boosts?.radarFlare?.active?.expiresAt &&
       inventory.boosts.radarFlare.active.expiresAt > new Date();
@@ -718,9 +548,6 @@ export const getNearbyPins = async (req, res) => {
       default:
         radiusInMiles = radarFlareActive ? 5 : 1;
     }
-
-    // const radiusInMeters =
-    //   radiusInMiles * 1609.34;
 
     // ==============================
     // XRAY FILTER

@@ -198,16 +198,16 @@ export const XP_CONFIG = {
   "Pothole / Road Damage": 55,
   "Dark Zone / Broken Light": 65,
   "Broken Fixture": 45,
-  "Obstruction": 50,
+  Obstruction: 50,
   "Litter Cluster": 35,
-  "Overflow": 60,
+  Overflow: 60,
   "Hazardous Waste": 120,
   "Vandalism / Graffiti": 40,
   "Dead Zone": 75,
 
-  "Furniture": 55,
+  Furniture: 55,
   "Media / Books": 35,
-  "Electronics": 85,
+  Electronics: 85,
   "Cardboard Goldmine": 30,
   "Neighborhood Event Leftovers": 45,
   "Digital Lifeline": 90,
@@ -250,7 +250,6 @@ export const XP_CONFIG = {
   "Mail Drop": 40,
 };
 
-
 export const BOOSTS = {
   radarFlare: {
     price: 150,
@@ -269,6 +268,40 @@ export const BOOSTS = {
 
   XrayFilter: {
     price: 40,
+    durationHours: 1,
+  },
+  Double_XP: {
+    price: 150,
+    durationHours: 2,
+  },
+  CreditMagnet: {
+    price: 120,
+    durationHours: 1,
+  },
+  PioneerLuck: {
+    price: 80,
+    durationHours: 4,
+  },
+  LongRangeRadar: {
+    price: 200,
+    durationHours: 0.5,
+  },
+  MultiLock: {
+    price: 150,
+    durationHours: 2,
+  },
+  FastTrackJury: {
+    price: 50,
+    pinCount: 1,
+    // durationHours: 1,
+  },
+  TheBeacon: {
+    price: 300,
+    pinCount: 1,
+    // durationHours: 1,
+  },
+  HexParty: {
+    price: 500,
     durationHours: 1,
   },
 };
