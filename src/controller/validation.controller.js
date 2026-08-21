@@ -23,7 +23,7 @@ import Megaphone from "../model/megaphone.model.js";
 import GoldenCargo from "../model/goldenCargo.model.js";
 import Notification from "../model/notification.model.js";
 import Inventory from "../model/inventory.model.js";
-import MultiLock from '../model/multiLock.model.js'
+import MultiLock from "../model/multiLock.model.js";
 
 export const validatePin = async (req, res) => {
   const session = await mongoose.startSession();
@@ -33,7 +33,7 @@ export const validatePin = async (req, res) => {
 
     const { pinId } = req.params;
     const userId = req.user.id;
-    console.log(userId)
+    console.log(userId);
 
     // =========================================
     // CURRENT USER LIVE LOCATION (FRONTEND GPS)
@@ -80,18 +80,18 @@ export const validatePin = async (req, res) => {
       });
     }
 
-if (
-  pin.islocked === true &&
-  pin.lockedBy?.toString() !== userId.toString()
-) {
-  await session.abortTransaction();
+    if (
+      pin.islocked === true &&
+      pin.lockedBy?.toString() !== userId.toString()
+    ) {
+      await session.abortTransaction();
 
-  return res.status(400).json({
-    success: false,
-    message: "This Pin is locked",
-    lockedBy: pin.lockedBy,
-  });
-}
+      return res.status(400).json({
+        success: false,
+        message: "This Pin is locked",
+        lockedBy: pin.lockedBy,
+      });
+    }
 
     const activeBoosts = await getActiveBoosts(userId);
     const hexPartyActive = await isHexPartyActive(pin.hexagonId);
@@ -1140,9 +1140,9 @@ export const solvePin = async (req, res) => {
 
       const beaconApplied = !!pin.isBeacon;
 
-if (beaconApplied) {
-  validatorXP *= 3;
-}
+      if (beaconApplied) {
+        validatorXP *= 3;
+      }
 
       // =================================================
       // CREDIT MAGNET
@@ -2175,7 +2175,7 @@ export const lockPinWithMultiLock = async (req, res) => {
     // =========================================
 
     const alreadyLocked = multiLock.activePins.some(
-      (id) => id.toString() === pinId.toString()
+      (id) => id.toString() === pinId.toString(),
     );
 
     if (alreadyLocked) {
@@ -2193,7 +2193,7 @@ export const lockPinWithMultiLock = async (req, res) => {
 
     pin.islocked = true;
     pin.lockedBy = userId;
-    pin.lockExpiresAt= multiLock.expireAt
+    pin.lockExpiresAt = multiLock.expireAt;
 
     await pin.save({ session });
 
