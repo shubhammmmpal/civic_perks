@@ -590,7 +590,9 @@ export const getNearbyPins = async (req, res) => {
     let nearbyPins = [];
 
     if (isGlobalAccess) {
-      nearbyPins = await Pin.find({}).lean();
+      nearbyPins = await Pin.find({
+        isGone: { $ne: true },
+      }).lean();
     } else {
       const radiusInMeters = radiusInMiles * 1609.34;
 
@@ -604,6 +606,7 @@ export const getNearbyPins = async (req, res) => {
             $maxDistance: radiusInMeters,
           },
         },
+        isGone: { $ne: true },
       }).lean();
     }
 

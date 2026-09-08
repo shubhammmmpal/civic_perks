@@ -59,68 +59,372 @@ import { calculateDistanceInMeters } from "../helper/helper.js";
 // };
 
 
+// export const updateProfile = async (req, res) => {
+//   try {
+//     const userId = req.user.id; // auth middleware se aayega
+
+//     const { fullName, email, nickname, mobile, street, country, city } = req.body;
+
+//     // 👇 find user
+//     const user = await User.findById(userId);
+//     if (!user) {
+//       return res.status(404).json({ message: "User not found" });
+//     }
+
+//     // 🔒 Email uniqueness check
+//     if (email && email !== user.email) {
+//       const emailExists = await User.findOne({ email });
+//       if (emailExists) {
+//         return res.status(400).json({ message: "Email already in use" });
+//       }
+//       user.email = email;
+//     }
+
+//     // 🔒 nickname uniqueness check
+//    if (nickname && nickname !== user.nickname) {
+
+//   const nicknameExists = await User.findOne({
+//     nickname,
+//     _id: { $ne: userId }
+//   });
+
+//   if (nicknameExists) {
+//     return res.status(400).json({
+//       message: "Nickname already taken"
+//     });
+//   }
+
+//   user.nickname = nickname;
+// }
+//     // ✏️ Update optional fields
+//     if (fullName) user.fullName = fullName;
+//      if (street) user.street = street;
+//      if (country) user.country = country;
+//      if (mobile) user.mobile = mobile;
+//      if(city) user.city = city;
+
+//     // 🖼️ Image update (if using multer)
+//     if (req.file) {
+//       user.image = req.file.path; // ya cloud URL
+//     }
+
+
+//     await user.save();
+
+//     return res.status(200).json({
+//       message: "Profile updated successfully",
+//       user
+//     });
+
+//   } catch (error) {
+//     console.error(error);
+//     return res.status(500).json({ message: "Server error" });
+//   }
+// };
+
+// export const getProfile = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+
+//     await validateSubscription(userId);
+
+//     const user = await User.findById(userId)
+//     //   .populate("perks")
+//       .populate("plans"); // optional (all plans)
+
+//     if (!user) {
+//       return res.status(404).json({ message: "User not found" });
+//     }
+
+//     // ⚡ Active Boost
+//     const activeBoost = await PaidPlan.findOne({
+//       userID: userId,
+//       planType: "boost",
+//       expiryDate: { $gt: new Date() }
+//     }).sort({ expiryDate: -1 });
+
+//     // 💎 Active Subscription
+//     const activeSubscription = await PaidPlan.findOne({
+//       userID: userId,
+//       planType: "subscription",
+//       expiryDate: { $gt: new Date() }
+//     }).sort({ expiryDate: -1 });
+
+//     // 🧼 Sensitive fields remove
+//     const userObj = user.toObject();
+//     delete userObj.otp;
+//     delete userObj.otpExpiry;
+
+//     return res.status(200).json({
+//       message: "Profile fetched successfully",
+//       user: userObj,
+//       activeBoost: activeBoost
+//         ? {
+//             type: activeBoost.boostType,
+//             expiryDate: activeBoost.expiryDate
+//           }
+//         : null,
+//       activeSubscription: activeSubscription
+//         ? {
+//             type: activeSubscription.subscriptionType,
+//             expiryDate: activeSubscription.expiryDate
+//           }
+//         : null
+//     });
+
+//   } catch (error) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+
 export const updateProfile = async (req, res) => {
   try {
-    const userId = req.user.id; // auth middleware se aayega
+    const userId = req.user.id;
 
-    const { fullName, email, nickname, mobile, street, country } = req.body;
+    const {
+      fullName,
+      email,
+      nickname,
+      mobile,
+      street,
+      country,
+      city,
+    } = req.body;
 
-    // 👇 find user
     const user = await User.findById(userId);
+
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
-    // 🔒 Email uniqueness check
-    if (email && email !== user.email) {
-      const emailExists = await User.findOne({ email });
-      if (emailExists) {
-        return res.status(400).json({ message: "Email already in use" });
+    const userLevel = user.level || 1;
+
+    /*
+      PROFILE FIELD RULES
+
+      Nickname
+      - Level 1+
+      - Always editable
+
+      Full Name
+      City
+      Country
+      - Level 5+
+
+      Email
+      Mobile
+      - Level 10+
+    */
+
+    // =========================
+    // NICKNAME - ALWAYS EDITABLE
+    // =========================
+
+    if (
+      nickname !== undefined &&
+      nickname !== null &&
+      nickname.trim() !== "" &&
+      nickname !== user.nickname
+    ) {
+      const cleanNickname = nickname.trim();
+
+      const nicknameExists = await User.findOne({
+        nickname: cleanNickname,
+        _id: { $ne: userId },
+      });
+
+      if (nicknameExists) {
+        return res.status(400).json({
+          success: false,
+          message: "Nickname already taken",
+        });
       }
-      user.email = email;
+
+      user.nickname = cleanNickname;
     }
 
-    // 🔒 nickname uniqueness check
-   if (nickname && nickname !== user.nickname) {
+    // =========================
+    // LEVEL 5+ FIELDS
+    // =========================
 
-  const nicknameExists = await User.findOne({
-    nickname,
-    _id: { $ne: userId }
-  });
+    if (fullName !== undefined && userLevel < 5) {
+      return res.status(403).json({
+        success: false,
+        message: "Full name can be changed after reaching level 5",
+        requiredLevel: 5,
+        currentLevel: userLevel,
+        field: "fullName",
+      });
+    }
 
-  if (nicknameExists) {
-    return res.status(400).json({
-      message: "Nickname already taken"
-    });
-  }
+    if (city !== undefined && userLevel < 5) {
+      return res.status(403).json({
+        success: false,
+        message: "City can be changed after reaching level 5",
+        requiredLevel: 5,
+        currentLevel: userLevel,
+        field: "city",
+      });
+    }
 
-  user.nickname = nickname;
-}
-    // ✏️ Update optional fields
-    if (fullName) user.fullName = fullName;
-     if (street) user.street = street;
-     if (country) user.country = country;
-     if (mobile) user.mobile = mobile;
+    if (country !== undefined && userLevel < 5) {
+      return res.status(403).json({
+        success: false,
+        message: "Country can be changed after reaching level 5",
+        requiredLevel: 5,
+        currentLevel: userLevel,
+        field: "country",
+      });
+    }
 
-    // 🖼️ Image update (if using multer)
+    // =========================
+    // LEVEL 10+ FIELDS
+    // =========================
+
+    if (email !== undefined && email !== user.email && userLevel < 10) {
+      return res.status(403).json({
+        success: false,
+        message: "Email can be changed after reaching level 10",
+        requiredLevel: 10,
+        currentLevel: userLevel,
+        field: "email",
+      });
+    }
+
+    if (mobile !== undefined && userLevel < 10) {
+      return res.status(403).json({
+        success: false,
+        message: "Phone number can be changed after reaching level 10",
+        requiredLevel: 10,
+        currentLevel: userLevel,
+        field: "mobile",
+      });
+    }
+
+    // =========================
+    // EMAIL UPDATE
+    // =========================
+
+    if (
+      email !== undefined &&
+      email.trim() !== "" &&
+      email.toLowerCase() !== user.email
+    ) {
+      const cleanEmail = email.trim().toLowerCase();
+
+      const emailExists = await User.findOne({
+        email: cleanEmail,
+        _id: { $ne: userId },
+      });
+
+      if (emailExists) {
+        return res.status(400).json({
+          success: false,
+          message: "Email already in use",
+        });
+      }
+
+      user.email = cleanEmail;
+    }
+
+    // =========================
+    // UPDATE LEVEL 5+ FIELDS
+    // =========================
+
+    if (userLevel >= 5) {
+      if (fullName !== undefined) {
+        user.fullName = fullName.trim();
+      }
+
+      if (city !== undefined) {
+        user.city = city.trim();
+      }
+
+      if (country !== undefined) {
+        user.country = country.trim();
+      }
+    }
+
+    // =========================
+    // UPDATE LEVEL 10+ FIELD
+    // =========================
+
+    if (userLevel >= 10 && mobile !== undefined) {
+      user.mobile = mobile;
+    }
+
+    // Street has no level restriction currently
+    if (street !== undefined) {
+      user.street = street.trim();
+    }
+
+    // =========================
+    // PROFILE IMAGE
+    // =========================
+
     if (req.file) {
-      user.image = req.file.path; // ya cloud URL
+      user.image = req.file.path;
     }
-
 
     await user.save();
 
-    return res.status(200).json({
-      message: "Profile updated successfully",
-      user
-    });
+    const userObj = user.toObject();
 
+    delete userObj.password;
+    delete userObj.otp;
+    delete userObj.otpExpiry;
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+
+      user: userObj,
+
+      profileAccess: {
+        nickname: {
+          unlocked: true,
+          requiredLevel: 1,
+        },
+
+        fullName: {
+          unlocked: user.level >= 5,
+          requiredLevel: 5,
+        },
+
+        city: {
+          unlocked: user.level >= 5,
+          requiredLevel: 5,
+        },
+
+        country: {
+          unlocked: user.level >= 5,
+          requiredLevel: 5,
+        },
+
+        email: {
+          unlocked: user.level >= 10,
+          requiredLevel: 10,
+        },
+
+        mobile: {
+          unlocked: user.level >= 10,
+          requiredLevel: 10,
+        },
+      },
+    });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server error" });
+    console.error("Update profile error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
   }
 };
-
 
 export const getProfile = async (req, res) => {
   try {
@@ -128,59 +432,123 @@ export const getProfile = async (req, res) => {
 
     await validateSubscription(userId);
 
-    // 👤 Get user
-    const user = await User.findById(userId)
-    //   .populate("perks")
-      .populate("plans"); // optional (all plans)
+    const user = await User.findById(userId).populate("plans");
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
-    // ⚡ Active Boost
+    // Active Boost
     const activeBoost = await PaidPlan.findOne({
       userID: userId,
       planType: "boost",
-      expiryDate: { $gt: new Date() }
-    }).sort({ expiryDate: -1 });
+      expiryDate: { $gt: new Date() },
+    }).sort({
+      expiryDate: -1,
+    });
 
-    // 💎 Active Subscription
+    // Active Subscription
     const activeSubscription = await PaidPlan.findOne({
       userID: userId,
       planType: "subscription",
-      expiryDate: { $gt: new Date() }
-    }).sort({ expiryDate: -1 });
+      expiryDate: { $gt: new Date() },
+    }).sort({
+      expiryDate: -1,
+    });
 
-    // 🧼 Sensitive fields remove
     const userObj = user.toObject();
+
+    // Sensitive fields remove
+    delete userObj.password;
     delete userObj.otp;
     delete userObj.otpExpiry;
 
+    const currentLevel = user.level || 1;
+
+    // ======================================
+    // CONDITIONAL PROFILE FIELDS
+    // ======================================
+
+    // Level below 5
+    if (currentLevel < 5) {
+      delete userObj.name;
+      delete userObj.city;
+      delete userObj.country;
+    }
+
+    // Level below 10
+    if (currentLevel < 10) {
+      delete userObj.email;
+      delete userObj.mobile;
+    }
+
+    // nickname is always available
+    // so we don't delete userObj.nickname
+
     return res.status(200).json({
+      success: true,
       message: "Profile fetched successfully",
 
       user: userObj,
 
-      activeBoost: activeBoost
-        ? {
-            type: activeBoost.boostType,
-            expiryDate: activeBoost.expiryDate
-          }
-        : null,
+      // profileAccess: {
+      //   nickname: {
+      //     unlocked: true,
+      //     requiredLevel: 1,
+      //   },
 
-      activeSubscription: activeSubscription
-        ? {
-            type: activeSubscription.subscriptionType,
-            expiryDate: activeSubscription.expiryDate
-          }
-        : null
+      //   fullName: {
+      //     unlocked: currentLevel >= 5,
+      //     requiredLevel: 5,
+      //   },
+
+      //   city: {
+      //     unlocked: currentLevel >= 5,
+      //     requiredLevel: 5,
+      //   },
+
+      //   country: {
+      //     unlocked: currentLevel >= 5,
+      //     requiredLevel: 5,
+      //   },
+
+      //   email: {
+      //     unlocked: currentLevel >= 10,
+      //     requiredLevel: 10,
+      //   },
+
+      //   mobile: {
+      //     unlocked: currentLevel >= 10,
+      //     requiredLevel: 10,
+      //   },
+      // },
+
+      // activeBoost: activeBoost
+      //   ? {
+      //       type: activeBoost.boostType,
+      //       expiryDate: activeBoost.expiryDate,
+      //     }
+      //   : null,
+
+      // activeSubscription: activeSubscription
+      //   ? {
+      //       type: activeSubscription.subscriptionType,
+      //       expiryDate: activeSubscription.expiryDate,
+      //     }
+      //   : null,
     });
-
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Get profile error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
   }
 };
-
 
 export const changeAccountType = async (req, res) => {
   try {

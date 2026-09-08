@@ -22,13 +22,15 @@ const userSchema = new mongoose.Schema(
 
     mobile: {
       type: Number,
-
     },
-    street:{
+    street: {
       type: String,
     },
-    country:{
-      type: String
+    country: {
+      type: String,
+    },
+    city: {
+      type: String,
     },
 
     fullName: { type: String, trim: true, default: "unnamed" },
@@ -68,7 +70,6 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-
 
     qrCode: String,
 
@@ -228,7 +229,8 @@ userSchema.pre("save", function () {
 
   if (currentLevel) {
     this.level = currentLevel.level;
-    this.level_name = currentLevel.name;
+    this.levelName = currentLevel.name;
+    // this.level_name = currentLevel.name;
   }
 
   // Find next milestone

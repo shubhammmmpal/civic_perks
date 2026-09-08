@@ -65,6 +65,117 @@ import MultiLock from '../model/multiLock.model.js'
 //   }
 // };
 
+// export const purchaseBoost = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+//     const { boostType, quantity = 1 } = req.body;
+
+//     // Validate boost type
+//     if (!BOOSTS[boostType]) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Invalid boost type",
+//       });
+//     }
+
+//     // Validate quantity
+//     if (!Number.isInteger(quantity) || quantity <= 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Quantity must be greater than 0",
+//       });
+//     }
+
+//     const boost = BOOSTS[boostType];
+//     const totalPrice = boost.price * quantity;
+
+//     // Find user
+//     const user = await User.findById(userId);
+
+//     if (!user) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "User not found",
+//       });
+//     }
+
+//     // Check credits
+//     if (user.credits < totalPrice) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Insufficient credits",
+//       });
+//     }
+
+//     const creditsBefore = user.credits;
+
+//     // Deduct credits
+//     user.credits -= totalPrice;
+//     await user.save();
+
+//     const creditsAfter = user.credits;
+
+//     await BoostLedger.create({
+//       userId,
+//       boostType,
+//       quantity,
+//       pricePerBoost: boost.price,
+//       totalPrice,
+//       creditsBefore,
+//       creditsAfter,
+//       // activatedAt: now,
+//       // expiresAt,
+//       transactionType: "PURCHASE",
+//       status: "SUCCESS",
+//     });
+
+//     // Find/Create inventory
+//     let inventory = await Inventory.findOne({ userId });
+
+//     if (!inventory) {
+//       inventory = new Inventory({ userId });
+//     }
+
+//     // Add purchased quantity
+//     inventory.boosts[boostType].quantity += quantity;
+
+//     const now = new Date();
+
+//     const expiresAt = new Date(
+//       now.getTime() + boost.durationHours * 60 * 60 * 1000,
+//     );
+
+//     // Activate boost
+//     inventory[boostType] = {
+//       activatedAt: now,
+//       expiresAt,
+//     };
+
+//     await inventory.save();
+
+//     return res.status(200).json({
+//       success: true,
+//       message: `${quantity} ${boostType} boost(s) purchased and activated successfully`,
+//       data: {
+//         boostType,
+//         quantity,
+//         totalPrice,
+//         activatedAt: now,
+//         expiresAt,
+//         remainingCredits: user.credits,
+//         currentQuantity: inventory.boosts[boostType].quantity,
+//       },
+//     });
+//   } catch (error) {
+//     console.log(error);
+
+//     return res.status(500).json({
+//       success: false,
+//       message: "Server error",
+//     });
+//   }
+// };
+
 export const purchaseBoost = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -86,10 +197,7 @@ export const purchaseBoost = async (req, res) => {
       });
     }
 
-    const boost = BOOSTS[boostType];
-    const totalPrice = boost.price * quantity;
-
-    // Find user
+    // Find user first because price depends on user level
     const user = await User.findById(userId);
 
     if (!user) {
@@ -99,11 +207,46 @@ export const purchaseBoost = async (req, res) => {
       });
     }
 
+    const boost = BOOSTS[boostType];
+
+    const basePrice = boost.price;
+
+    let pricePerBoost = basePrice;
+    let priceMultiplier = 1;
+    let pricingTier = "NORMAL";
+
+    // ==============================
+    // LEVEL BASED BOOST PRICING
+    // ==============================
+
+    if (user.level < 5) {
+      // Level 1 - 4
+      priceMultiplier = 2;
+      pricePerBoost = basePrice * 2;
+      pricingTier = "DOUBLE";
+    } else if (user.level >= 10) {
+      // Level 10+
+      priceMultiplier = 0.5;
+      pricePerBoost = basePrice / 2;
+      pricingTier = "HALF";
+    } else {
+      // Level 5 - 9
+      priceMultiplier = 1;
+      pricePerBoost = basePrice;
+      pricingTier = "NORMAL";
+    }
+
+    const totalPrice = pricePerBoost * quantity;
+
     // Check credits
     if (user.credits < totalPrice) {
       return res.status(400).json({
         success: false,
         message: "Insufficient credits",
+        data: {
+          requiredCredits: totalPrice,
+          availableCredits: user.credits,
+        },
       });
     }
 
@@ -111,38 +254,60 @@ export const purchaseBoost = async (req, res) => {
 
     // Deduct credits
     user.credits -= totalPrice;
+
     await user.save();
 
     const creditsAfter = user.credits;
+
+    // ==============================
+    // BOOST LEDGER
+    // ==============================
 
     await BoostLedger.create({
       userId,
       boostType,
       quantity,
-      pricePerBoost: boost.price,
+
+      // Actual price charged
+      pricePerBoost,
+
       totalPrice,
+
       creditsBefore,
       creditsAfter,
-      // activatedAt: now,
-      // expiresAt,
+
       transactionType: "PURCHASE",
       status: "SUCCESS",
     });
 
-    // Find/Create inventory
-    let inventory = await Inventory.findOne({ userId });
+    // ==============================
+    // INVENTORY
+    // ==============================
+
+    let inventory = await Inventory.findOne({
+      userId,
+    });
 
     if (!inventory) {
-      inventory = new Inventory({ userId });
+      inventory = new Inventory({
+        userId,
+      });
     }
 
-    // Add purchased quantity
+    // Make sure boost object exists
+    if (!inventory.boosts[boostType]) {
+      inventory.boosts[boostType] = {
+        quantity: 0,
+      };
+    }
+
     inventory.boosts[boostType].quantity += quantity;
 
     const now = new Date();
 
     const expiresAt = new Date(
-      now.getTime() + boost.durationHours * 60 * 60 * 1000,
+      now.getTime() +
+        boost.durationHours * 60 * 60 * 1000,
     );
 
     // Activate boost
@@ -156,18 +321,34 @@ export const purchaseBoost = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: `${quantity} ${boostType} boost(s) purchased and activated successfully`,
+
       data: {
         boostType,
+
         quantity,
-        totalPrice,
+
+        userLevel: user.level,
+
+        pricing: {
+          basePrice,
+          priceMultiplier,
+          pricingTier,
+          pricePerBoost,
+          totalPrice,
+        },
+
         activatedAt: now,
         expiresAt,
+
+        creditsBefore,
         remainingCredits: user.credits,
-        currentQuantity: inventory.boosts[boostType].quantity,
+
+        currentQuantity:
+          inventory.boosts[boostType].quantity,
       },
     });
   } catch (error) {
-    console.log(error);
+    console.error("Purchase boost error:", error);
 
     return res.status(500).json({
       success: false,

@@ -191,18 +191,23 @@ const PinSchema = new mongoose.Schema(
     },
 
     isBeacon: {
-      type:Boolean,
-      default:false
-    },
-    islocked:{
       type: Boolean,
-      default: false
+      default: false,
     },
-    lockedBy:{
+    islocked: {
+      type: Boolean,
+      default: false,
+    },
+    lockedBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User"
+      ref: "User",
     },
     lockExpiresAt: Date,
+
+    isGone: {
+      type: Boolean,
+      default: false,
+    },
 
     hexagonId: {
       type: String,

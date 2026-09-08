@@ -2239,3 +2239,55 @@ export const lockPinWithMultiLock = async (req, res) => {
     session.endSession();
   }
 };
+
+export const markPinAsGone = async (req, res) => {
+  try {
+    const { pinId } = req.params;
+
+    // Validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(pinId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid pin ID",
+      });
+    }
+
+    const pin = await Pin.findById(pinId);
+
+    if (!pin) {
+      return res.status(404).json({
+        success: false,
+        message: "Pin not found",
+      });
+    }
+
+    // Already gone
+    if (pin.isGone) {
+      return res.status(400).json({
+        success: false,
+        message: "Pin is already marked as gone",
+      });
+    }
+
+    pin.isGone = true;
+
+    await pin.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Pin marked as gone successfully",
+      data: {
+        pinId: pin._id,
+        isGone: pin.isGone,
+      },
+    });
+  } catch (error) {
+    console.error("Mark pin as gone error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};

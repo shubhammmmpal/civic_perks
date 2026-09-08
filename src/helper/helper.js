@@ -580,9 +580,9 @@ export const getActiveBoosts = async (userId) => {
     activeBoosts[boostName] =
     // active?.active === true &&
       !!active?.activatedAt &&
-      !!active?.expiresAt &&
+      !!active.expiresAt &&
       now >= new Date(active?.activatedAt) &&
-      now < new Date(active?.expiresAt);
+      now < new Date(active.expiresAt);
   }
 
   return activeBoosts;
