@@ -21,7 +21,7 @@ import Notification from "../model/notification.model.js";
 
 export const createPin = async (req, res) => {
   try {
-    const { description, bounty, latitude, longitude, hexagonId } =
+    const { description, bounty, latitude, longitude, hexagonId ,pinDescription} =
       req.body || {};
 
     const userId = req.user?.id;
@@ -169,6 +169,7 @@ export const createPin = async (req, res) => {
     const newPin = await Pin.create({
       questions,
       description,
+      pinDescription,
       hexagonId,
       images: imageUrls,
       bounty: pinBounty,
@@ -498,40 +499,324 @@ export const getPinById = async (req, res) => {
   }
 };
 
+// export const getNearbyPins = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+
+//     await validateSubscription(userId);
+
+//     const { latitude, longitude } = req.query;
+
+//     // ==============================
+//     // VALIDATION
+//     // ==============================
+
+//     if (!latitude || !longitude) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Latitude and longitude required",
+//       });
+//     }
+
+//     // ==============================
+//     // GET INVENTORY
+//     // ==============================
+
+//     const user = await User.findById(userId);
+
+//     const inventory = await Inventory.findOne({ userId });
+
+//     // ==============================
+//     // RADIUS LOGIC
+//     // ==============================
+
+//     const radarFlareActive =
+//       inventory?.boosts?.radarFlare?.active?.expiresAt &&
+//       inventory.boosts.radarFlare.active.expiresAt > new Date();
+
+//     let radiusInMiles = 1;
+//     let isGlobalAccess = false;
+
+//     switch (user.tier) {
+//       case "Civic_Plus":
+//         radiusInMiles = 10;
+//         break;
+
+//       case "Civic_Pro":
+//         isGlobalAccess = true;
+//         break;
+
+//       default:
+//         radiusInMiles = radarFlareActive ? 5 : 1;
+//     }
+
+//     // ==============================
+//     // XRAY FILTER
+//     // ==============================
+
+//     const xrayFilterActive =
+//       inventory?.boosts?.XrayFilter?.active?.expiresAt &&
+//       inventory.boosts.XrayFilter.active.expiresAt > new Date();
+
+//     const megaphoneActive =
+//       inventory?.boosts?.megaphone?.active?.expiresAt &&
+//       inventory.boosts.megaphone.active.expiresAt > new Date();
+
+//     const goldenCargoActive =
+//       inventory?.boosts?.goldenCargo?.active?.expiresAt &&
+//       inventory.boosts.goldenCargo.active.expiresAt > new Date();
+
+//     // ==============================
+//     // GET NEARBY PINS
+//     // ==============================
+
+//     // let nearbyPins = await Pin.find({
+//     //   location: {
+//     //     $near: {
+//     //       $geometry: {
+//     //         type: "Point",
+
+//     //         coordinates: [
+//     //           parseFloat(longitude),
+//     //           parseFloat(latitude)
+//     //         ]
+//     //       },
+
+//     //       $maxDistance: radiusInMeters
+//     //     }
+//     //   }
+//     // })
+//     // .lean();
+
+//     let nearbyPins = [];
+
+//     if (isGlobalAccess) {
+//       nearbyPins = await Pin.find({
+//         isGone: { $ne: true },
+//       }).lean();
+//     } else {
+//       const radiusInMeters = radiusInMiles * 1609.34;
+
+//       nearbyPins = await Pin.find({
+//         location: {
+//           $near: {
+//             $geometry: {
+//               type: "Point",
+//               coordinates: [parseFloat(longitude), parseFloat(latitude)],
+//             },
+//             $maxDistance: radiusInMeters,
+//           },
+//         },
+//         isGone: { $ne: true },
+//       }).lean();
+//     }
+
+//     // ==============================
+//     // XRAY FILTER LOGIC
+//     // ==============================
+
+//     if (xrayFilterActive) {
+//       // Only red pins
+//       let redPins = nearbyPins.filter((pin) => pin.status === "red");
+
+//       // Sort by highest bounty
+//       redPins.sort((a, b) => b.bounty - a.bounty);
+
+//       // If 10+ pins exist
+//       if (redPins.length >= 10) {
+//         nearbyPins = redPins.slice(0, 10);
+//       } else {
+//         // Show 50% of nearby pins
+//         const totalPins = nearbyPins.length;
+
+//         const halfPins = Math.ceil(totalPins * 0.5);
+
+//         nearbyPins = nearbyPins
+//           .sort((a, b) => b.bounty - a.bounty)
+//           .slice(0, halfPins);
+//       }
+//     }
+
+//     // ==============================
+//     // RESPONSE
+//     // ==============================
+
+//     return res.status(200).json({
+//       success: true,
+
+//       tier: user.tier,
+
+//       radius: isGlobalAccess ? "Global" : `${radiusInMiles} Miles`,
+
+//       radarFlareActive,
+
+//       xrayFilterActive,
+//       megaphoneActive,
+//       goldenCargoActive,
+//       totalPins: nearbyPins.length,
+
+//       data: nearbyPins,
+//     });
+//   } catch (error) {
+//     console.log(error);
+
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// };
+
 export const getNearbyPins = async (req, res) => {
   try {
     const userId = req.user.id;
 
+    /*
+    |--------------------------------------------------------------------------
+    | VALIDATE SUBSCRIPTION
+    |--------------------------------------------------------------------------
+    */
+
     await validateSubscription(userId);
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET LOCATION
+    |--------------------------------------------------------------------------
+    */
 
     const { latitude, longitude } = req.query;
 
-    // ==============================
-    // VALIDATION
-    // ==============================
-
-    if (!latitude || !longitude) {
+    if (
+      latitude === undefined ||
+      longitude === undefined ||
+      latitude === "" ||
+      longitude === ""
+    ) {
       return res.status(400).json({
         success: false,
         message: "Latitude and longitude required",
       });
     }
 
-    // ==============================
-    // GET INVENTORY
-    // ==============================
+    const parsedLatitude = Number(latitude);
+    const parsedLongitude = Number(longitude);
+
+    /*
+    |--------------------------------------------------------------------------
+    | VALIDATE COORDINATES
+    |--------------------------------------------------------------------------
+    */
+
+    if (!Number.isFinite(parsedLatitude) || !Number.isFinite(parsedLongitude)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid latitude or longitude",
+      });
+    }
+
+    if (
+      parsedLatitude < -90 ||
+      parsedLatitude > 90 ||
+      parsedLongitude < -180 ||
+      parsedLongitude > 180
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid latitude or longitude range",
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | FIND USER
+    |--------------------------------------------------------------------------
+    */
 
     const user = await User.findById(userId);
 
-    const inventory = await Inventory.findOne({ userId });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
 
-    // ==============================
-    // RADIUS LOGIC
-    // ==============================
+    /*
+    |--------------------------------------------------------------------------
+    | INVENTORY
+    |--------------------------------------------------------------------------
+    */
 
-    const radarFlareActive =
+    const inventory = await Inventory.findOne({
+      userId,
+    });
+
+    const now = new Date();
+
+    /*
+    |--------------------------------------------------------------------------
+    | EXPIRE "IT'S GONE" PINS
+    |--------------------------------------------------------------------------
+    |
+    | After 3 votes:
+    |
+    | status = green
+    | goneConfirmedAt = now
+    | hideAfter = now + 24 hours
+    |
+    | During those 24 hours:
+    | isGone remains false
+    |
+    | After 24 hours:
+    | isGone becomes true
+    |
+    */
+
+    await Pin.updateMany(
+      {
+        isGone: {
+          $ne: true,
+        },
+
+        goneConfirmedAt: {
+          $ne: null,
+        },
+
+        hideAfter: {
+          $ne: null,
+          $lte: now,
+        },
+      },
+      {
+        $set: {
+          isGone: true,
+        },
+      },
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | RADAR FLARE
+    |--------------------------------------------------------------------------
+    */
+
+    const radarFlareActive = Boolean(
       inventory?.boosts?.radarFlare?.active?.expiresAt &&
-      inventory.boosts.radarFlare.active.expiresAt > new Date();
+      new Date(inventory.boosts.radarFlare.active.expiresAt) > now,
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | DETERMINE SEARCH RADIUS
+    |--------------------------------------------------------------------------
+    |
+    | Default     = 1 mile
+    | Radar Flare = 5 miles
+    | Civic Plus  = 10 miles
+    | Civic Pro   = Global
+    |
+    */
 
     let radiusInMiles = 1;
     let isGlobalAccess = false;
@@ -547,98 +832,438 @@ export const getNearbyPins = async (req, res) => {
 
       default:
         radiusInMiles = radarFlareActive ? 5 : 1;
+        break;
     }
 
-    // ==============================
-    // XRAY FILTER
-    // ==============================
+    /*
+    |--------------------------------------------------------------------------
+    | XRAY FILTER
+    |--------------------------------------------------------------------------
+    */
 
-    const xrayFilterActive =
+    const xrayFilterActive = Boolean(
       inventory?.boosts?.XrayFilter?.active?.expiresAt &&
-      inventory.boosts.XrayFilter.active.expiresAt > new Date();
+      new Date(inventory.boosts.XrayFilter.active.expiresAt) > now,
+    );
 
-    const megaphoneActive =
+    /*
+    |--------------------------------------------------------------------------
+    | MEGAPHONE
+    |--------------------------------------------------------------------------
+    */
+
+    const megaphoneActive = Boolean(
       inventory?.boosts?.megaphone?.active?.expiresAt &&
-      inventory.boosts.megaphone.active.expiresAt > new Date();
+      new Date(inventory.boosts.megaphone.active.expiresAt) > now,
+    );
 
-    const goldenCargoActive =
+    /*
+    |--------------------------------------------------------------------------
+    | GOLDEN CARGO
+    |--------------------------------------------------------------------------
+    */
+
+    const goldenCargoActive = Boolean(
       inventory?.boosts?.goldenCargo?.active?.expiresAt &&
-      inventory.boosts.goldenCargo.active.expiresAt > new Date();
+      new Date(inventory.boosts.goldenCargo.active.expiresAt) > now,
+    );
 
-    // ==============================
-    // GET NEARBY PINS
-    // ==============================
+    /*
+    |--------------------------------------------------------------------------
+    | COMMON PIN FILTER
+    |--------------------------------------------------------------------------
+    |
+    | isGone:true pins must never be returned.
+    |
+    | Normally the updateMany above is enough.
+    |
+    | hideAfter condition below gives us an additional safety layer:
+    | even if updateMany failed to change an old document for some reason,
+    | an expired pin won't be returned.
+    |
+    */
 
-    // let nearbyPins = await Pin.find({
-    //   location: {
-    //     $near: {
-    //       $geometry: {
-    //         type: "Point",
+    const visibilityFilter = {
+      isGone: {
+        $ne: true,
+      },
 
-    //         coordinates: [
-    //           parseFloat(longitude),
-    //           parseFloat(latitude)
-    //         ]
-    //       },
+      $or: [
+        /*
+        | Normal pin / no gone confirmation
+        */
+        {
+          hideAfter: null,
+        },
 
-    //       $maxDistance: radiusInMeters
-    //     }
-    //   }
-    // })
-    // .lean();
+        /*
+        | Older documents may not contain hideAfter
+        */
+        {
+          hideAfter: {
+            $exists: false,
+          },
+        },
+
+        /*
+        | Gone confirmed but still inside
+        | the 24-hour visibility window.
+        */
+        {
+          hideAfter: {
+            $gt: now,
+          },
+        },
+      ],
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET PINS
+    |--------------------------------------------------------------------------
+    */
 
     let nearbyPins = [];
 
+    /*
+    |--------------------------------------------------------------------------
+    | CIVIC PRO — GLOBAL
+    |--------------------------------------------------------------------------
+    */
+
     if (isGlobalAccess) {
-      nearbyPins = await Pin.find({
-        isGone: { $ne: true },
-      }).lean();
+      nearbyPins = await Pin.find(visibilityFilter)
+        .populate("createdBy", "name profileImage")
+        .populate("validatedBy", "name profileImage")
+        .populate("claimedBy", "name profileImage")
+        .populate("validationVotes.userId", "name profileImage")
+        .populate("goneVotes.userId", "name profileImage")
+        .lean();
     } else {
+      /*
+      |--------------------------------------------------------------------------
+      | LOCATION BASED SEARCH
+      |--------------------------------------------------------------------------
+      */
+
       const radiusInMeters = radiusInMiles * 1609.34;
 
       nearbyPins = await Pin.find({
+        ...visibilityFilter,
+
         location: {
           $near: {
             $geometry: {
               type: "Point",
-              coordinates: [parseFloat(longitude), parseFloat(latitude)],
+
+              coordinates: [parsedLongitude, parsedLatitude],
             },
+
             $maxDistance: radiusInMeters,
           },
         },
-        isGone: { $ne: true },
-      }).lean();
+      })
+        .populate("createdBy", "name profileImage")
+        .populate("validatedBy", "name profileImage")
+        .populate("claimedBy", "name profileImage")
+        .populate("validationVotes.userId", "name profileImage")
+        .populate("goneVotes.userId", "name profileImage")
+        .lean();
     }
 
-    // ==============================
-    // XRAY FILTER LOGIC
-    // ==============================
+    /*
+    |--------------------------------------------------------------------------
+    | ADD FRONTEND HELPER DATA
+    |--------------------------------------------------------------------------
+    |
+    | This saves the frontend from having to figure out:
+    |
+    | - Is this a resource pin?
+    | - Can I validate it?
+    | - Should I show "It's Mine"?
+    | - Did I already validate?
+    | - Did I already vote "It's Gone"?
+    | - How many gone votes are left?
+    |
+    */
+
+    const RESOURCE_CATEGORY = "Resources (Zero-Waste, Upcycling & Utilities)";
+
+    nearbyPins = nearbyPins.map((pin) => {
+      /*
+      |--------------------------------------------------------------------------
+      | RESOURCE PIN
+      |--------------------------------------------------------------------------
+      */
+
+      const isResourcePin =
+        pin.questions?.some((item) => item.category === RESOURCE_CATEGORY) ||
+        false;
+
+      /*
+      |--------------------------------------------------------------------------
+      | CURRENT USER VALIDATION
+      |--------------------------------------------------------------------------
+      */
+
+      const hasValidated =
+        pin.validationVotes?.some((vote) =>
+          vote.userId?._id
+            ? vote.userId._id.toString() === userId.toString()
+            : vote.userId?.toString() === userId.toString(),
+        ) || false;
+
+      /*
+      |--------------------------------------------------------------------------
+      | CURRENT USER GONE VOTE
+      |--------------------------------------------------------------------------
+      */
+
+      const hasVotedGone =
+        pin.goneVotes?.some((vote) =>
+          vote.userId?._id
+            ? vote.userId._id.toString() === userId.toString()
+            : vote.userId?.toString() === userId.toString(),
+        ) || false;
+
+      /*
+      |--------------------------------------------------------------------------
+      | RESOURCE CLAIM
+      |--------------------------------------------------------------------------
+      */
+
+      const claimedById = pin.claimedBy?._id || pin.claimedBy || null;
+
+      const isClaimedByMe = claimedById
+        ? claimedById.toString() === userId.toString()
+        : false;
+
+      const isClaimed = Boolean(claimedById);
+
+      /*
+      |--------------------------------------------------------------------------
+      | CREATOR
+      |--------------------------------------------------------------------------
+      */
+
+      const creatorId = pin.createdBy?._id || pin.createdBy;
+
+      const isMyPin = creatorId
+        ? creatorId.toString() === userId.toString()
+        : false;
+
+      /*
+      |--------------------------------------------------------------------------
+      | GONE VOTES
+      |--------------------------------------------------------------------------
+      */
+
+      const goneVoteCount = pin.goneVoteCount || 0;
+
+      const votesRequired = Math.max(0, 3 - goneVoteCount);
+
+      /*
+      |--------------------------------------------------------------------------
+      | GONE CONFIRMED
+      |--------------------------------------------------------------------------
+      */
+
+      const goneConfirmed = Boolean(pin.goneConfirmedAt);
+
+      /*
+      |--------------------------------------------------------------------------
+      | FRONTEND ACTION
+      |--------------------------------------------------------------------------
+      |
+      | Resource:
+      |
+      | red    → It's Mine
+      | orange → Solve (only claimed user)
+      |
+      | Normal:
+      |
+      | red/orange → Validate
+      |
+      */
+
+      let primaryAction = null;
+
+      if (!isMyPin && !goneConfirmed) {
+        if (isResourcePin) {
+          if (!isClaimed) {
+            primaryAction = "ITS_MINE";
+          } else if (isClaimedByMe) {
+            primaryAction = "SOLVE";
+          }
+        } else {
+          if (!hasValidated) {
+            primaryAction = "VALIDATE";
+          }
+        }
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | TIME UNTIL HIDDEN
+      |--------------------------------------------------------------------------
+      */
+
+      let hideInMilliseconds = null;
+
+      if (goneConfirmed && pin.hideAfter) {
+        hideInMilliseconds = Math.max(
+          0,
+          new Date(pin.hideAfter).getTime() - now.getTime(),
+        );
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | RETURN PIN
+      |--------------------------------------------------------------------------
+      */
+
+      return {
+        ...pin,
+
+        /*
+        |--------------------------------------------------------------------------
+        | PIN TYPE
+        |--------------------------------------------------------------------------
+        */
+
+        pinType: isResourcePin ? "RESOURCE" : "NORMAL",
+
+        isResourcePin,
+
+        /*
+        |--------------------------------------------------------------------------
+        | USER STATE
+        |--------------------------------------------------------------------------
+        */
+
+        userState: {
+          isMyPin,
+
+          hasValidated,
+
+          hasVotedGone,
+
+          isClaimed,
+
+          isClaimedByMe,
+
+          primaryAction,
+        },
+
+        /*
+        |--------------------------------------------------------------------------
+        | VALIDATION
+        |--------------------------------------------------------------------------
+        */
+
+        validationInfo: {
+          count: pin.validationVoteCount || 0,
+
+          hasValidated,
+        },
+
+        /*
+        |--------------------------------------------------------------------------
+        | RESOURCE
+        |--------------------------------------------------------------------------
+        */
+
+        resourceInfo: isResourcePin
+          ? {
+              isClaimed,
+
+              isClaimedByMe,
+
+              claimedBy: pin.claimedBy,
+
+              claimedAt: pin.claimedAt,
+            }
+          : null,
+
+        /*
+        |--------------------------------------------------------------------------
+        | GONE VOTING
+        |--------------------------------------------------------------------------
+        */
+
+        goneInfo: {
+          count: goneVoteCount,
+
+          required: 3,
+
+          votesRequired,
+
+          hasVoted: hasVotedGone,
+
+          confirmed: goneConfirmed,
+
+          confirmedAt: pin.goneConfirmedAt,
+
+          hideAfter: pin.hideAfter,
+
+          hideInMilliseconds,
+        },
+      };
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | XRAY FILTER
+    |--------------------------------------------------------------------------
+    |
+    | Keep your existing behavior:
+    |
+    | Only prioritize RED pins.
+    |
+    */
 
     if (xrayFilterActive) {
-      // Only red pins
       let redPins = nearbyPins.filter((pin) => pin.status === "red");
 
-      // Sort by highest bounty
-      redPins.sort((a, b) => b.bounty - a.bounty);
+      /*
+      |--------------------------------------------------------------------------
+      | HIGHEST BOUNTY FIRST
+      |--------------------------------------------------------------------------
+      */
 
-      // If 10+ pins exist
+      redPins.sort((a, b) => (Number(b.bounty) || 0) - (Number(a.bounty) || 0));
+
+      /*
+      |--------------------------------------------------------------------------
+      | MAX 10 RED PINS
+      |--------------------------------------------------------------------------
+      */
+
       if (redPins.length >= 10) {
         nearbyPins = redPins.slice(0, 10);
       } else {
-        // Show 50% of nearby pins
+        /*
+        |--------------------------------------------------------------------------
+        | EXISTING 50% FALLBACK
+        |--------------------------------------------------------------------------
+        */
+
         const totalPins = nearbyPins.length;
 
         const halfPins = Math.ceil(totalPins * 0.5);
 
         nearbyPins = nearbyPins
-          .sort((a, b) => b.bounty - a.bounty)
+          .sort((a, b) => (Number(b.bounty) || 0) - (Number(a.bounty) || 0))
           .slice(0, halfPins);
       }
     }
 
-    // ==============================
-    // RESPONSE
-    // ==============================
+    /*
+    |--------------------------------------------------------------------------
+    | RESPONSE
+    |--------------------------------------------------------------------------
+    */
 
     return res.status(200).json({
       success: true,
@@ -647,21 +1272,27 @@ export const getNearbyPins = async (req, res) => {
 
       radius: isGlobalAccess ? "Global" : `${radiusInMiles} Miles`,
 
-      radarFlareActive,
+      boosts: {
+        radarFlareActive,
 
-      xrayFilterActive,
-      megaphoneActive,
-      goldenCargoActive,
+        xrayFilterActive,
+
+        megaphoneActive,
+
+        goldenCargoActive,
+      },
+
       totalPins: nearbyPins.length,
 
       data: nearbyPins,
     });
   } catch (error) {
-    console.log(error);
+    console.error("Get nearby pins error:", error);
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+
+      message: error.message || "Failed to get nearby pins",
     });
   }
 };

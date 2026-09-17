@@ -2,8 +2,14 @@ import express from "express";
 
 const router = express.Router();
 
-import { createPin,getAllPins,getPinById,getNearbyPins,changePinStatus,deletePin } from "../controller/pin.controller.js";
-
+import {
+  createPin,
+  getAllPins,
+  getPinById,
+  getNearbyPins,
+  changePinStatus,
+  deletePin,
+} from "../controller/pin.controller.js";
 
 // middleware (JWT auth)
 import { protect } from "../middleware/auth.middlewere.js";
@@ -14,7 +20,7 @@ router.post(
   "/pins",
   protect,
   upload.array("images", 5), // 👈 ye missing hota hai mostly
-  createPin
+  createPin,
 );
 
 // Get all pins
@@ -25,13 +31,8 @@ router.get("/pins/:id", getPinById);
 
 router.patch("/change-status/:pinId", changePinStatus);
 
-router.get(
-  "/nearby-pins",
-  protect,
-  getNearbyPins
-);
+router.get("/nearby-pins", protect, getNearbyPins);
 
-router.delete("/pins/:pinId",protect, deletePin);
-
+router.delete("/pins/:pinId", protect, deletePin);
 
 export default router;

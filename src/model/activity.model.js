@@ -1,7 +1,38 @@
 import mongoose from "mongoose";
 
+/*
+|--------------------------------------------------------------------------
+| ACTIVITY TYPES
+|--------------------------------------------------------------------------
+*/
+
+export const ACTIVITY_TYPES = {
+  PIN_DROPPED: "pin_dropped",
+  PIN_VALIDATED: "pin_validated",
+  PIN_CLAIMED: "pin_claimed",
+  PIN_STOPPED: "pin_stopped",
+  PIN_SOLVED: "pin_solved",
+  PIN_GONE_VOTE: "pin_gone_vote",
+
+  HOUR_SERVED: "hour_served",
+  FRIEND_ADDED: "friend_added",
+  EARNED_BY_FRIEND: "earned_by_friend",
+};
+
+/*
+|--------------------------------------------------------------------------
+| ACTIVITY SCHEMA
+|--------------------------------------------------------------------------
+*/
+
 const ActivitySchema = new mongoose.Schema(
   {
+    /*
+    |--------------------------------------------------------------------------
+    | USER
+    |--------------------------------------------------------------------------
+    */
+
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -9,83 +40,197 @@ const ActivitySchema = new mongoose.Schema(
       index: true,
     },
 
+    /*
+    |--------------------------------------------------------------------------
+    | ACTIVITY TYPE
+    |--------------------------------------------------------------------------
+    */
+
     activityType: {
       type: String,
-      enum: [
-        "pin_dropped",
-        "pin_validated",
-        "pin_solved",
-        "hour_served",
-        "friend_added",
-        "earned_by_friend",
-      ],
+
+      enum: Object.values(ACTIVITY_TYPES),
+
       default: null,
+
+      index: true,
     },
+
+    /*
+    |--------------------------------------------------------------------------
+    | PIN
+    |--------------------------------------------------------------------------
+    */
 
     pinId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Pin",
       default: null,
+      index: true,
     },
+
+    /*
+    |--------------------------------------------------------------------------
+    | DISTANCE
+    |--------------------------------------------------------------------------
+    */
 
     distance: {
       type: Number,
       default: null,
+      min: 0,
     },
 
+    /*
+    |--------------------------------------------------------------------------
+    | PIN TITLE
+    |--------------------------------------------------------------------------
+    */
+
     pinTitle: {
-  type: String,
-  default: null,
-},
+      type: String,
+      default: null,
+      trim: true,
+    },
 
-images: [
-  {
-    type: String,
-  },
-],
+    /*
+    |--------------------------------------------------------------------------
+    | IMAGES
+    |--------------------------------------------------------------------------
+    */
 
-xpEarned: {
-  type: Number,
-  default: 0,
-},
+    images: [
+      {
+        type: String,
+      },
+    ],
 
-creditsSpent: {
-  type: Number,
-  default: 0,
-},
+    /*
+    |--------------------------------------------------------------------------
+    | XP
+    |--------------------------------------------------------------------------
+    */
 
-activityLocation: {
-  latitude: Number,
-  longitude: Number,
-},
+    xpEarned: {
+      type: Number,
+      default: 0,
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | CREDITS
+    |--------------------------------------------------------------------------
+    */
+
+    creditsSpent: {
+      type: Number,
+      default: 0,
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | ACTIVITY LOCATION
+    |--------------------------------------------------------------------------
+    */
+
+    activityLocation: {
+      latitude: {
+        type: Number,
+        default: null,
+      },
+
+      longitude: {
+        type: Number,
+        default: null,
+      },
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | START LOCATION
+    |--------------------------------------------------------------------------
+    */
 
     startLocation: {
       latitude: {
         type: Number,
+        default: null,
       },
 
       longitude: {
         type: Number,
+        default: null,
       },
     },
+
+    /*
+    |--------------------------------------------------------------------------
+    | END LOCATION
+    |--------------------------------------------------------------------------
+    */
 
     endLocation: {
       latitude: {
         type: Number,
+        default: null,
       },
 
       longitude: {
         type: Number,
+        default: null,
       },
     },
 
+    /*
+    |--------------------------------------------------------------------------
+    | STATUS
+    |--------------------------------------------------------------------------
+    */
+
     status: {
       type: String,
-      enum: ["pending", "completed", "failed"],
+
+      enum: [
+        "pending",
+        "completed",
+        "failed",
+      ],
+
       default: "pending",
+
+      index: true,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  },
 );
 
-export default mongoose.model("Activity", ActivitySchema);
+/*
+|--------------------------------------------------------------------------
+| INDEXES
+|--------------------------------------------------------------------------
+*/
+
+ActivitySchema.index({
+  userId: 1,
+  pinId: 1,
+  status: 1,
+});
+
+ActivitySchema.index({
+  userId: 1,
+  activityType: 1,
+  createdAt: -1,
+});
+
+/*
+|--------------------------------------------------------------------------
+| EXPORT
+|--------------------------------------------------------------------------
+*/
+
+export default mongoose.model(
+  "Activity",
+  ActivitySchema,
+);

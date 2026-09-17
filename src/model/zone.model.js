@@ -38,6 +38,23 @@ const zoneSchema = new mongoose.Schema(
       residential: { type: Number, default: 0 },
     },
 
+    zoneQuality: {
+      type: String,
+      enum: ["safe", "danger"],
+      default: "safe",
+    },
+
+    votes: {
+      safe: {
+        type: Number,
+        default: 0,
+      },
+      danger: {
+        type: Number,
+        default: 0,
+      },
+    },
+
     totalPoints: {
       type: Number,
       default: 0,
@@ -55,7 +72,7 @@ const zoneSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 export default mongoose.model("Zone", zoneSchema);

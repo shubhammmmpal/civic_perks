@@ -1,5 +1,6 @@
 import Zone from "../model/zone.model.js";
 import ZoneReporter from "../model/zoneReporter.model.js";
+import ZoneVote from "../model/zoneVote.model.js";
 import User from "../model/user.model.js";
 import mongoose from "mongoose";
 
@@ -433,6 +434,151 @@ export const getZoneByHexagonId = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Internal server error",
+    });
+  }
+};
+
+export const voteZoneQuality = async (req, res) => {
+  try {
+    const { hexagonId } = req.params;
+    const { vote } = req.body;
+
+    const userId = req.user?._id || req.user?.id;
+
+    if (!hexagonId) {
+      return res.status(400).json({
+        success: false,
+        message: "Hexagon ID is required",
+      });
+    }
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    if (!["safe", "danger"].includes(vote)) {
+      return res.status(400).json({
+        success: false,
+        message: "Vote must be safe or danger",
+      });
+    }
+
+    // Find zone using hexagonId
+    const zone = await Zone.findOne({ hexagonId });
+
+    if (!zone) {
+      return res.status(404).json({
+        success: false,
+        message: "Zone not found",
+      });
+    }
+
+    // Create/update user's vote
+    await ZoneVote.findOneAndUpdate(
+      {
+        zoneId: zone._id,
+        userId,
+      },
+      {
+        $set: {
+          vote,
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+        runValidators: true,
+      },
+    );
+
+    // Count votes
+    const voteCounts = await ZoneVote.aggregate([
+      {
+        $match: {
+          zoneId: zone._id,
+        },
+      },
+      {
+        $group: {
+          _id: "$vote",
+          count: {
+            $sum: 1,
+          },
+        },
+      },
+    ]);
+
+    let safeVotes = 0;
+    let dangerVotes = 0;
+
+    voteCounts.forEach((item) => {
+      if (item._id === "safe") {
+        safeVotes = item.count;
+      }
+
+      if (item._id === "danger") {
+        dangerVotes = item.count;
+      }
+    });
+
+    // Decide zone quality
+    let zoneQuality = zone.zoneQuality;
+
+    if (safeVotes > dangerVotes) {
+      zoneQuality = "safe";
+    } else if (dangerVotes > safeVotes) {
+      zoneQuality = "danger";
+    }
+
+    const totalVotes = safeVotes + dangerVotes;
+
+    const confidenceScore =
+      totalVotes > 0
+        ? Math.round(
+            (Math.max(safeVotes, dangerVotes) / totalVotes) * 100,
+          )
+        : 0;
+
+    // Update zone using hexagonId
+    const updatedZone = await Zone.findOneAndUpdate(
+      { hexagonId },
+      {
+        $set: {
+          zoneQuality,
+          "votes.safe": safeVotes,
+          "votes.danger": dangerVotes,
+          confidenceScore,
+          lastCalculatedAt: new Date(),
+        },
+      },
+      {
+        new: true,
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Vote submitted successfully",
+      data: {
+        hexagonId,
+        zoneQuality,
+        safeVotes,
+        dangerVotes,
+        totalVotes,
+        confidenceScore,
+        zone: updatedZone,
+      },
+    });
+  } catch (error) {
+    console.error("Vote zone quality error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to submit vote",
+      error: error.message,
     });
   }
 };
