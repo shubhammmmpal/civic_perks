@@ -158,6 +158,51 @@ export const createPin = async (req, res) => {
 
     const activeMode = nearbyUserCount >= 5 ? "normal" : "vanguard";
 
+    // =========================================
+// VANGUARD MODE - MAX 20 PINS PER DAY
+// =========================================
+
+if (activeMode === "vanguard") {
+  // Start of today
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  // End of today
+  const endOfDay = new Date();
+  endOfDay.setHours(23, 59, 59, 999);
+
+  // Count only Vanguard pins created today by this user
+  const todayVanguardPinCount = await Pin.countDocuments({
+    createdBy: userId,
+
+    activePinMode: "vanguard",
+
+    createdAt: {
+      $gte: startOfDay,
+      $lte: endOfDay,
+    },
+  });
+
+  // Maximum 20 pins per day
+  if (todayVanguardPinCount >= 20) {
+    return res.status(429).json({
+      success: false,
+
+      message:
+        "Vanguard Mode daily limit reached. You can create a maximum of 20 pins per day.",
+
+      limit: 20,
+
+      pinsCreatedToday: todayVanguardPinCount,
+
+      remainingPins: 0,
+
+      activeMode: "vanguard",
+    });
+  }
+}
+
+
     // Update latest mode on user
     user.activeRadius = activeRadius;
     user.activeMode = activeMode;

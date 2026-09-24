@@ -16,7 +16,13 @@ import {
   calculateCreditBountyWithBoost,
   getLevelUpNotification,
 } from "../helper/helper.js";
-import { getLevelData, VALIDATION_CONFIG } from "../helper/constants.js";
+import {
+  ACTION_HERO_RANKS,
+  CARTOGRAPHER_RANKS,
+  getActionHeroRank,
+  getLevelData,
+  VALIDATION_CONFIG,
+} from "../helper/constants.js";
 import States from "../model/states.model.js";
 import Activity from "../model/activity.model.js";
 import Fine from "../model/fine.model.js";
@@ -1030,11 +1036,10 @@ export const solvePin = async (req, res) => {
 
     const userId = req.user.id;
 
-    //  return
-
     // =====================================================
     // FIND PIN
     // =====================================================
+
     const pin = await Pin.findById(pinId).session(session);
 
     if (!pin) {
@@ -1053,10 +1058,12 @@ export const solvePin = async (req, res) => {
     if (pin.reservationExpiresAt && pin.reservationExpiresAt > new Date()) {
       const activeCargo = await GoldenCargo.findOne({
         pinId: pin._id,
-        expiresAt: { $gt: new Date() },
+        expiresAt: {
+          $gt: new Date(),
+        },
       }).session(session);
 
-      if (activeCargo && activeCargo.userId.toString() !== userId) {
+      if (activeCargo && activeCargo.userId.toString() !== userId.toString()) {
         await session.abortTransaction();
 
         return res.status(403).json({
@@ -1070,9 +1077,28 @@ export const solvePin = async (req, res) => {
     // =====================================================
     // FIND VALIDATION
     // =====================================================
+
     const validation = await Validation.findOne({
       pinID: pinId,
     }).session(session);
+    // =====================================================
+    // NORMAL MODE:
+    // ONCE VERIFIED, FAKE REPORTING IS PERMANENTLY LOCKED
+    // =====================================================
+
+    if (
+      pin.activePinMode !== "vanguard" &&
+      (validation?.consensusStatus === "VERIFIED" ||
+        pin.pinStatus === "verified")
+    ) {
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+        message:
+          "This pin has already been verified and can no longer be reported as fake.",
+      });
+    }
 
     if (!validation) {
       await session.abortTransaction();
@@ -1084,9 +1110,13 @@ export const solvePin = async (req, res) => {
     }
 
     // =====================================================
-    // ONLY VALIDATOR CAN SOLVE
+    // ONLY PRIMARY VALIDATOR CAN SOLVE
     // =====================================================
-    if (validation.validatedBy.toString() !== userId) {
+
+    if (
+      !validation.validatedBy ||
+      validation.validatedBy.toString() !== userId.toString()
+    ) {
       await session.abortTransaction();
 
       return res.status(403).json({
@@ -1098,6 +1128,7 @@ export const solvePin = async (req, res) => {
     // =====================================================
     // STOP TASK
     // =====================================================
+
     if (action === "stop") {
       pin.status = "orange";
 
@@ -1107,9 +1138,13 @@ export const solvePin = async (req, res) => {
 
       validation.stoppedAt = new Date();
 
-      await pin.save({ session });
+      await pin.save({
+        session,
+      });
 
-      await validation.save({ session });
+      await validation.save({
+        session,
+      });
 
       await session.commitTransaction();
 
@@ -1120,562 +1155,883 @@ export const solvePin = async (req, res) => {
     }
 
     // =====================================================
-    // SOLVE TASK
+    // INVALID ACTION
     // =====================================================
-    if (action === "solve") {
-      // =================================================
-      // ALREADY SOLVED
-      // =================================================
-      if (pin.status === "green") {
-        await session.abortTransaction();
 
-        return res.status(400).json({
-          success: false,
-          message: "Task already solved",
-        });
-      }
+    if (action !== "solve") {
+      await session.abortTransaction();
 
-      const activeBoosts = await getActiveBoosts(userId);
-
-      const hexPartyActive = await isHexPartyActive(pin.hexagonId);
-
-      const fastTrackJuryApplied = !!activeBoosts.FastTrackJury;
-
-      console.log("Active boosts:", activeBoosts);
-      console.log("Hex Party active:", hexPartyActive);
-
-      // =================================================
-      // SAVE OPTIONAL DATA
-      // =================================================
-      if (beforeImage) {
-        validation.beforeImage = beforeImage;
-      }
-
-      if (timeTaken) {
-        validation.timeTaken = timeTaken;
-      }
-
-      if (beforeImage && activeBoosts.FastTrackJury) {
-        pin.pinStatus = "verified";
-
-        const inventory = await Inventory.findOne({ userId });
-
-        if (!inventory) {
-          return res.status(404).json({
-            success: false,
-            message: "Inventory not found",
-          });
-        }
-
-        console.log(inventory.boosts);
-
-        inventory.boosts.FastTrackJury.active.active = false;
-
-        validation.rewardDistributed = true;
-
-        await inventory.save();
-
-        // bypass jury
-      } else {
-        validation.status = "pending";
-
-        // normal jury flow
-      }
-
-      // =================================================
-      // UPDATE STATUS
-      // =================================================
-      pin.status = "green";
-
-      validation.status = "green";
-
-      pin.solvedAt = new Date();
-      pin.pin_solve_time = timeTaken || 0;
-
-      validation.solvedAt = new Date();
-
-      // =================================================
-      // BASE REWARDS
-      // =================================================
-
-      const baseValidatorBounty = Number(pin.bounty) || 0;
-      const baseValidatorXP = Number(pin.xpScore) || 0;
-
-      let validatorBounty = baseValidatorBounty;
-      let validatorXP = baseValidatorXP;
-
-      const beaconApplied = !!pin.isBeacon;
-
-      if (beaconApplied) {
-        validatorXP *= 3;
-      }
-
-      // =================================================
-      // CREDIT MAGNET
-      // +25% CREDIT BOUNTY
-      // =================================================
-
-      const creditMagnetApplied = !!activeBoosts.CreditMagnet;
-
-      validatorBounty = calculateCreditBountyWithBoost({
-        bounty: validatorBounty,
-        creditMagnet: creditMagnetApplied,
+      return res.status(400).json({
+        success: false,
+        message: "Invalid action. Use stop or solve",
       });
+    }
 
-      // =================================================
-      // PIONEER LUCK
-      // FIRST PIN IN HEXAGON = 3X
-      // =================================================
+    // =====================================================
+    // ALREADY SOLVED
+    // =====================================================
 
-      let pioneerLuckApplied = false;
+    if (pin.status === "green") {
+      await session.abortTransaction();
 
-      if (pin.isFirstPin && activeBoosts.PioneerLuck) {
-        validatorXP *= 3;
-        validatorBounty *= 3;
-
-        pioneerLuckApplied = true;
-      }
-
-      // =================================================
-      // DOUBLE XP + HEX PARTY
-      // =================================================
-
-      const doubleXPApplied = !!activeBoosts.Double_XP;
-
-      validatorXP = calculateXPWithBoosts({
-        baseXP: validatorXP,
-        doubleXP: doubleXPApplied,
-        hexParty: hexPartyActive,
+      return res.status(400).json({
+        success: false,
+        message: "Task already solved",
       });
+    }
 
-      // =================================================
-      // CHECK MEGAPHONE BONUS
-      // =================================================
-      const activeMegaphone = await Megaphone.findOne({
-        pinId: pin._id,
-        expiresAt: { $gt: new Date() },
+    // =====================================================
+    // ACTIVE BOOSTS
+    // =====================================================
+
+    const activeBoosts = await getActiveBoosts(userId);
+
+    const hexPartyActive = await isHexPartyActive(pin.hexagonId);
+
+    const fastTrackJuryApplied = !!activeBoosts.FastTrackJury;
+
+    console.log("Active boosts:", activeBoosts);
+    console.log("Hex Party active:", hexPartyActive);
+
+    // =====================================================
+    // SAVE OPTIONAL DATA
+    // =====================================================
+
+    if (beforeImage) {
+      validation.beforeImage = beforeImage;
+    }
+
+    if (timeTaken) {
+      validation.timeTaken = timeTaken;
+    }
+
+    // =====================================================
+    // FAST TRACK JURY
+    // =====================================================
+
+    if (beforeImage && activeBoosts.FastTrackJury) {
+      pin.pinStatus = "verified";
+
+      const inventory = await Inventory.findOne({
+        userId,
       }).session(session);
 
-      let megaphoneBonusApplied = false;
+      if (!inventory) {
+        await session.abortTransaction();
 
-      if (activeMegaphone) {
-        validatorBounty *= 2;
-        validatorXP *= 2;
-        megaphoneBonusApplied = true;
-      }
-
-      // =================================================
-      // GIVE REWARD
-      // =================================================
-
-      const user = await User.findById(validation.validatedBy).session(session);
-
-      // const updated_lavel = user.xp + validatorXP;
-
-      // await checkLevelUp(user, updated_lavel, session);
-
-      // user.xp += validatorXP;
-      // user.credits += validatorBounty;
-
-      // await updateLeaderboardXP(user._id, validatorXP, session);
-
-      // await user.save({ session });
-
-      // =====================================================
-      // STORE OLD LEVEL
-      // =====================================================
-
-      const oldLevel = Number(user.level || 1);
-
-      // =====================================================
-      // ADD XP
-      // =====================================================
-
-      const updatedXP = Number(user.xp || 0) + Number(travelXP || 0);
-
-      // =====================================================
-      // CHECK / UPDATE LEVEL
-      // =====================================================
-
-      await checkLevelUp(user, updatedXP, session);
-
-      // =====================================================
-      // ADD REWARDS
-      // =====================================================
-
-      user.xp = updatedXP;
-
-      user.credits = Number(user.credits || 0) + Number(creditsEarned || 0);
-
-      await updateLeaderboardXP(user._id, travelXP, session);
-
-      // =====================================================
-      // TRUST SCORE
-      // =====================================================
-
-      user.trustScore = Math.min(
-        99.9,
-        Number((Number(user.trustScore || 0) + 0.1).toFixed(1)),
-      );
-
-      // =====================================================
-      // GET FINAL LEVEL FROM XP
-      // =====================================================
-
-      const levelData = getLevelData(user.xp);
-
-      user.level = levelData.level;
-      user.levelName = levelData.name;
-
-      // =====================================================
-      // CHECK LEVEL UP
-      // =====================================================
-
-      let levelUpNotification = null;
-
-      if (Number(levelData.level) > oldLevel) {
-        const levelMessage = getLevelUpNotification({
-          level: levelData.level,
-          levelName: levelData.name,
-          emoji: levelData.emoji || "",
+        return res.status(404).json({
+          success: false,
+          message: "Inventory not found",
         });
-
-        levelUpNotification = {
-          tokens: user.fcmToken ? [user.fcmToken] : [],
-
-          title: levelMessage.title,
-
-          body: levelMessage.body,
-
-          data: {
-            type: "LEVEL_UP",
-
-            level: String(levelData.level),
-
-            levelName: String(levelData.name || ""),
-
-            emoji: String(levelData.emoji || ""),
-          },
-        };
       }
 
-      // =====================================================
-      // SAVE USER
-      // =====================================================
+      /*
+       * Keeping your existing FastTrackJury structure.
+       */
 
-      await user.save({ session });
+      if (inventory.boosts?.FastTrackJury?.active) {
+        inventory.boosts.FastTrackJury.active.active = false;
+      }
 
-      // =====================================================
-      // STORE LEVEL-UP NOTIFICATION
-      // =====================================================
+      validation.rewardDistributed = true;
 
-      if (levelUpNotification) {
-        await Notification.create(
-          [
-            {
-              title: levelUpNotification.title,
+      await inventory.save({
+        session,
+      });
+    } else {
+      // Normal jury flow
+      validation.status = "pending";
+    }
 
-              description: levelUpNotification.body,
+    // =====================================================
+    // UPDATE SOLVED STATUS
+    // =====================================================
 
-              notificationType: "private",
+    pin.status = "green";
 
-              receivers: [user._id],
+    validation.status = "green";
 
-              senderRole: "system",
-            },
-          ],
+    pin.solvedAt = new Date();
+
+    pin.pin_solve_time = Number(timeTaken) || 0;
+
+    validation.solvedAt = new Date();
+
+    // =====================================================
+    // BASE REWARDS
+    // =====================================================
+
+    const baseValidatorBounty = Number(pin.bounty) || 0;
+
+    const baseValidatorXP = Number(pin.xpScore) || 0;
+
+    let validatorBounty = baseValidatorBounty;
+
+    let validatorXP = baseValidatorXP;
+
+    // =====================================================
+    // BEACON
+    // 3X XP
+    // =====================================================
+
+    const beaconApplied = !!pin.isBeacon;
+
+    if (beaconApplied) {
+      validatorXP *= 3;
+    }
+
+    // =====================================================
+    // CREDIT MAGNET
+    // +25% CREDIT BOUNTY
+    // =====================================================
+
+    const creditMagnetApplied = !!activeBoosts.CreditMagnet;
+
+    validatorBounty = calculateCreditBountyWithBoost({
+      bounty: validatorBounty,
+
+      creditMagnet: creditMagnetApplied,
+    });
+
+    // =====================================================
+    // PIONEER LUCK
+    // FIRST PIN IN HEXAGON = 3X
+    // =====================================================
+
+    let pioneerLuckApplied = false;
+
+    if (pin.isFirstPin && activeBoosts.PioneerLuck) {
+      validatorXP *= 3;
+
+      validatorBounty *= 3;
+
+      pioneerLuckApplied = true;
+    }
+
+    // =====================================================
+    // DOUBLE XP + HEX PARTY
+    // =====================================================
+
+    const doubleXPApplied = !!activeBoosts.Double_XP;
+
+    validatorXP = calculateXPWithBoosts({
+      baseXP: validatorXP,
+
+      doubleXP: doubleXPApplied,
+
+      hexParty: hexPartyActive,
+    });
+
+    // =====================================================
+    // MEGAPHONE BONUS
+    // =====================================================
+
+    const activeMegaphone = await Megaphone.findOne({
+      pinId: pin._id,
+
+      expiresAt: {
+        $gt: new Date(),
+      },
+    }).session(session);
+
+    let megaphoneBonusApplied = false;
+
+    if (activeMegaphone) {
+      validatorBounty *= 2;
+
+      validatorXP *= 2;
+
+      megaphoneBonusApplied = true;
+    }
+
+    // =====================================================
+    // FIND SOLVER
+    // =====================================================
+
+    const user = await User.findById(validation.validatedBy).session(session);
+
+    if (!user) {
+      await session.abortTransaction();
+
+      return res.status(404).json({
+        success: false,
+        message: "Validator user not found",
+      });
+    }
+
+    // =====================================================
+    // STORE OLD LEVEL
+    // =====================================================
+
+    const oldLevel = Number(user.level || 1);
+
+    // =====================================================
+    // CALCULATE NEW XP
+    // =====================================================
+
+    const updatedXP = Number(user.xp || 0) + Number(validatorXP || 0);
+
+    // =====================================================
+    // CHECK LEVEL UP
+    // =====================================================
+
+    await checkLevelUp(user, updatedXP, session);
+
+    // =====================================================
+    // ADD REWARDS
+    // =====================================================
+
+    user.xp = updatedXP;
+
+    user.credits = Number(user.credits || 0) + Number(validatorBounty || 0);
+
+    // =====================================================
+    // LEADERBOARD
+    // =====================================================
+
+    await updateLeaderboardXP(user._id, validatorXP, session);
+
+    // =====================================================
+    // GET FINAL LEVEL
+    // =====================================================
+
+    const levelData = getLevelData(user.xp);
+
+    user.level = levelData.level;
+
+    user.levelName = levelData.name;
+
+    // =====================================================
+    // LEVEL-UP NOTIFICATION
+    // =====================================================
+
+    let levelUpNotification = null;
+
+    if (Number(levelData.level) > oldLevel) {
+      const levelMessage = getLevelUpNotification({
+        level: levelData.level,
+
+        levelName: levelData.name,
+
+        emoji: levelData.emoji || "",
+      });
+
+      levelUpNotification = {
+        tokens: user.fcmToken ? [user.fcmToken] : [],
+
+        title: levelMessage.title,
+
+        body: levelMessage.body,
+
+        data: {
+          type: "LEVEL_UP",
+
+          level: String(levelData.level),
+
+          levelName: String(levelData.name || ""),
+
+          emoji: String(levelData.emoji || ""),
+        },
+      };
+    }
+
+    // =====================================================
+    // SAVE SOLVER
+    // =====================================================
+
+    await user.save({
+      session,
+    });
+
+    // =====================================================
+    // SAVE LEVEL-UP NOTIFICATION IN DB
+    // =====================================================
+
+    if (levelUpNotification) {
+      await Notification.create(
+        [
           {
-            session,
+            title: levelUpNotification.title,
+
+            description: levelUpNotification.body,
+
+            notificationType: "private",
+
+            receivers: [user._id],
+
+            senderRole: "system",
+
+            isRead: false,
           },
-        );
-      }
+        ],
+        {
+          session,
+        },
+      );
+    }
 
-      // =================================================
-      // REFERRAL BONUS
-      // =================================================
+    // =====================================================
+    // REFERRAL BONUS
+    // =====================================================
 
-      const validator = await User.findById(userId)
-        .select("createdAt refferredBy")
-        .session(session);
+    const validator = await User.findById(userId)
+      .select("createdAt refferredBy")
+      .session(session);
 
-      if (validator) {
-        const isEligible =
-          Date.now() - validator.createdAt.getTime() <=
-          30 * 24 * 60 * 60 * 1000;
+    if (validator) {
+      const isEligible =
+        Date.now() - validator.createdAt.getTime() <= 30 * 24 * 60 * 60 * 1000;
 
-        if (isEligible && validator.refferredBy) {
-          const referrer = await User.findOne({
-            refferal_id: validator.refferredBy,
-          }).session(session);
+      if (isEligible && validator.refferredBy) {
+        const referrer = await User.findOne({
+          refferal_id: validator.refferredBy,
+        }).session(session);
 
-          if (referrer) {
-            const referralCredits = Math.floor(validatorBounty * 0.1);
-            const referralXP = Math.floor(validatorXP * 0.1);
+        if (referrer) {
+          const referralCredits = Math.floor(validatorBounty * 0.1);
 
-            // const updatedReferrer = await User.findByIdAndUpdate(
-            //   referrer._id,
-            //   {
-            //     $inc: {
-            //       credits: referralCredits,
-            //       xp: referralXP,
-            //     },
-            //   },
-            //   {
-            //     new: true,
-            //     session,
-            //   },
-            // ).select("level levelName xp fcmToken");
+          const referralXP = Math.floor(validatorXP * 0.1);
 
-            const referrerUser = await User.findById(referrer._id).session(
-              session,
-            );
+          const referrerUser = await User.findById(referrer._id).session(
+            session,
+          );
 
-            const updated_lavel = referrerUser.xp + referralXP;
+          if (referrerUser) {
+            const updatedReferrerXP = Number(referrerUser.xp || 0) + referralXP;
 
-            await checkLevelUp(referrerUser, updated_lavel, session);
+            await checkLevelUp(referrerUser, updatedReferrerXP, session);
 
-            referrerUser.xp += referralXP;
-            referrerUser.credits += referralCredits;
+            referrerUser.xp = updatedReferrerXP;
+
+            referrerUser.credits =
+              Number(referrerUser.credits || 0) + referralCredits;
+
+            // =============================================
+            // UPDATE REFERRER LEVEL
+            // =============================================
+
+            const referrerLevelData = getLevelData(referrerUser.xp);
+
+            referrerUser.level = referrerLevelData.level;
+
+            referrerUser.levelName = referrerLevelData.name;
 
             await updateLeaderboardXP(referrerUser._id, referralXP, session);
 
-            await referrerUser.save({ session });
+            await referrerUser.save({
+              session,
+            });
 
             await States.findOneAndUpdate(
               {
                 userId: referrer._id,
               },
+
               {
                 $inc: {
                   earnedByFriends: referralCredits,
                 },
               },
+
               {
                 upsert: true,
+
                 new: true,
+
                 session,
               },
             );
-
-            // await updateLeaderboardXP(updatedReferrer._id, referralXP, session);
-
-            // await checkLevelUp(updatedReferrer, session);
           }
         }
       }
-
-      // =================================================
-      // UPDATE STATS
-      // =================================================
-      await States.findOneAndUpdate(
-        {
-          userId: validation.validatedBy,
-        },
-        {
-          $inc: {
-            pinsSolved: 1,
-            hoursServed: Number(timeTaken) || 0,
-            // totalXP: validatorXP,
-            // totalCredits: validatorBounty,
-            // totalEarnedBounty: validatorBounty,
-            // greenPinsSolved: 1,
-          },
-        },
-        {
-          upsert: true,
-          new: true,
-          session,
-        },
-      );
-
-      // =================================================
-      // SAVE REWARD INFO
-      // =================================================
-      validation.rewardDistributed = true;
-
-      validation.validatorReward = {
-        bounty: validatorBounty,
-        xp: validatorXP,
-
-        baseBounty: baseValidatorBounty,
-        baseXP: baseValidatorXP,
-
-        beaconApplied,
-        creditMagnetApplied,
-        pioneerLuckApplied,
-        doubleXPApplied,
-        hexPartyActive,
-        megaphoneBonusApplied,
-
-        isFirstPin: !!pin.isFirstPin,
-      };
-
-      // =================================================
-      // SAVE DOCUMENTS
-      // =================================================
-      await pin.save({ session });
-
-      await validation.save({ session });
-
-      // =====================================================
-      // CREATE ACTIVITY LOG
-      // =====================================================
-
-      await Activity.create(
-        [
-          {
-            userId: validation.validatedBy,
-
-            activityType: "pin_solved",
-
-            pinId: pin._id,
-
-            pinTitle: pin.description || "Pin Solved",
-
-            images: beforeImage ? [beforeImage] : pin.images || [],
-
-            xpEarned: validatorXP,
-
-            creditsSpent: validatorBounty,
-
-            activityLocation: {
-              latitude: pin.location.coordinates[1],
-              longitude: pin.location.coordinates[0],
-            },
-
-            status: "completed",
-          },
-        ],
-        { session },
-      );
-
-      // =================================================
-      // COMMIT
-      // =================================================
-
-      const pinCreator = await User.findById(pin.createdBy)
-        .select("fcmToken name")
-        .session(session);
-
-      const creatorNotification = {
-        tokens: pinCreator?.fcmToken ? [pinCreator.fcmToken] : [],
-        title: "✅ Your Pin Has Been Solved!",
-        body: `Someone has successfully solved your reported pin.`,
-        data: {
-          type: "PIN_SOLVED",
-          pinId: pin._id.toString(),
-          solvedBy: user._id.toString(),
-        },
-      };
-
-      const solverNotification = {
-        tokens: user.fcmToken ? [user.fcmToken] : [],
-        title: "🎉 Rewards Earned!",
-        body: `You earned ${validatorXP} XP and ${validatorBounty} Credits for solving a pin.`,
-        data: {
-          type: "PIN_SOLVED_REWARD",
-          pinId: pin._id.toString(),
-          xp: validatorXP,
-          credits: validatorBounty,
-        },
-      };
-      await session.commitTransaction();
-
-      // await Promise.all([
-      //   sendNotification(solverNotification),
-      //   sendNotification(creatorNotification),
-      // ]);
-
-      const notifications = [
-        sendNotification(solverNotification),
-        sendNotification(creatorNotification),
-      ];
-
-      // if (levelUpResult?.levelUp && levelUpResult.notification) {
-      //   notifications.push(sendNotification(levelUpResult.notification));
-      // }
-
-      await Promise.all(notifications);
-
-      // =================================================
-      // RESPONSE
-      // =================================================
-      return res.status(200).json({
-        success: true,
-
-        message: "Task solved successfully and rewards distributed",
-
-        gainedReward: {
-          xp: validatorXP,
-          credits: validatorBounty,
-
-          baseXP: baseValidatorXP,
-          baseCredits: baseValidatorBounty,
-
-          isFirstPin: !!pin.isFirstPin,
-
-          boosts: {
-            beacon: beaconApplied,
-            doubleXP: doubleXPApplied,
-            creditMagnet: creditMagnetApplied,
-            pioneerLuck: pioneerLuckApplied,
-            hexParty: hexPartyActive,
-            megaphone: megaphoneBonusApplied,
-          },
-        },
-
-        currentUser: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          profileImage: user.profileImage,
-          currentXP: user.xp,
-          currentCredits: user.credits,
-        },
-
-        pinInfo: {
-          id: pin._id,
-          status: pin.status,
-          solvedAt: pin.solvedAt,
-          bounty: pin.bounty,
-          xpScore: pin.xpScore,
-          description: pin.description,
-          location: pin.location,
-          images: pin.images,
-        },
-
-        validationInfo: {
-          beforeImage: validation.beforeImage,
-          timeTaken: validation.timeTaken,
-          solvedAt: validation.solvedAt,
-        },
-        activeBoosts,
-        hexPartyActive,
-      });
     }
 
     // =====================================================
-    // INVALID ACTION
+    // UPDATE SOLVER STATS
     // =====================================================
-    await session.abortTransaction();
 
-    return res.status(400).json({
-      success: false,
-      message: "Invalid action. Use stop or solve",
+    // await States.findOneAndUpdate(
+    //   {
+    //     userId: validation.validatedBy,
+    //   },
+
+    //   {
+    //     $inc: {
+    //       pinsSolved: 1,
+
+    //       hoursServed: Number(timeTaken) || 0,
+    //     },
+    //   },
+
+    //   {
+    //     upsert: true,
+
+    //     new: true,
+
+    //     session,
+    //   },
+    // );
+
+    // =====================================================
+    // UPDATE SOLVER STATS + ACTION HERO SKILL TREE
+    // =====================================================
+
+    const previousStats = await States.findOne({
+      userId: validation.validatedBy,
+    }).session(session);
+
+    const previousPinsSolved = Number(previousStats?.pinsSolved || 0);
+
+    const previousActionHeroRank = getActionHeroRank(previousPinsSolved);
+
+    // Increment solve stats
+    const userStats = await States.findOneAndUpdate(
+      {
+        userId: validation.validatedBy,
+      },
+
+      {
+        $inc: {
+          pinsSolved: 1,
+          hoursServed: Number(timeTaken) || 0,
+        },
+      },
+
+      {
+        upsert: true,
+        new: true,
+        session,
+        setDefaultsOnInsert: true,
+      },
+    );
+
+    const totalPinsSolved = Number(userStats.pinsSolved || 0);
+
+    const actionHeroRank = getActionHeroRank(totalPinsSolved);
+
+    // Check whether a new rank was unlocked
+    const actionHeroRankUnlocked =
+      previousActionHeroRank.name !== actionHeroRank.name;
+
+    let actionHeroNotification = null;
+
+    if (actionHeroRankUnlocked) {
+      actionHeroNotification = {
+        tokens: user.fcmToken ? [user.fcmToken] : [],
+
+        title: `${actionHeroRank.emoji} Action Hero Rank Unlocked!`,
+
+        body:
+          `Congratulations! You reached ${actionHeroRank.name} ` +
+          `after solving ${totalPinsSolved} pins.`,
+
+        data: {
+          type: "ACTION_HERO_RANK_UNLOCKED",
+
+          rank: actionHeroRank.name,
+
+          emoji: actionHeroRank.emoji,
+
+          skillLevel: String(actionHeroRank.level),
+
+          pinsSolved: String(totalPinsSolved),
+        },
+      };
+
+      await Notification.create(
+        [
+          {
+            title: actionHeroNotification.title,
+
+            description: actionHeroNotification.body,
+
+            notificationType: "private",
+
+            receivers: [user._id],
+
+            senderRole: "system",
+
+            isRead: false,
+          },
+        ],
+        {
+          session,
+        },
+      );
+    }
+
+    // =====================================================
+    // SAVE REWARD INFO
+    // =====================================================
+
+    validation.rewardDistributed = true;
+
+    validation.validatorReward = {
+      bounty: validatorBounty,
+
+      xp: validatorXP,
+
+      baseBounty: baseValidatorBounty,
+
+      baseXP: baseValidatorXP,
+
+      beaconApplied,
+
+      creditMagnetApplied,
+
+      pioneerLuckApplied,
+
+      doubleXPApplied,
+
+      hexPartyActive,
+
+      megaphoneBonusApplied,
+
+      isFirstPin: !!pin.isFirstPin,
+    };
+
+    // =====================================================
+    // SAVE DOCUMENTS
+    // =====================================================
+
+    await pin.save({
+      session,
+    });
+
+    await validation.save({
+      session,
+    });
+
+    // =====================================================
+    // CREATE ACTIVITY LOG
+    // =====================================================
+
+    await Activity.create(
+      [
+        {
+          userId: validation.validatedBy,
+
+          activityType: "pin_solved",
+
+          pinId: pin._id,
+
+          pinTitle: pin.description || "Pin Solved",
+
+          images: beforeImage ? [beforeImage] : pin.images || [],
+
+          xpEarned: validatorXP,
+
+          /*
+           * Keeping your current field.
+           * Semantically this is earned bounty,
+           * not credits spent.
+           */
+          creditsSpent: validatorBounty,
+
+          activityLocation: {
+            latitude: pin.location.coordinates[1],
+
+            longitude: pin.location.coordinates[0],
+          },
+
+          status: "completed",
+        },
+      ],
+      {
+        session,
+      },
+    );
+
+    // =====================================================
+    // PIN CREATOR
+    // =====================================================
+
+    const pinCreator = await User.findById(pin.createdBy)
+      .select("fcmToken name")
+      .session(session);
+
+    // =====================================================
+    // CREATOR NOTIFICATION
+    // =====================================================
+
+    const creatorNotification = {
+      tokens: pinCreator?.fcmToken ? [pinCreator.fcmToken] : [],
+
+      title: "✅ Your Pin Has Been Solved!",
+
+      body: "Someone has successfully solved your reported pin.",
+
+      data: {
+        type: "PIN_SOLVED",
+
+        pinId: pin._id.toString(),
+
+        solvedBy: user._id.toString(),
+      },
+    };
+
+    // =====================================================
+    // SOLVER REWARD NOTIFICATION
+    // =====================================================
+
+    const solverNotification = {
+      tokens: user.fcmToken ? [user.fcmToken] : [],
+
+      title: "🎉 Rewards Earned!",
+
+      body:
+        `You earned ${validatorXP} XP and ` +
+        `${validatorBounty} Credits for solving a pin.`,
+
+      data: {
+        type: "PIN_SOLVED_REWARD",
+
+        pinId: pin._id.toString(),
+
+        xp: String(validatorXP),
+
+        credits: String(validatorBounty),
+      },
+    };
+
+    // =====================================================
+    // SAVE SOLVER NOTIFICATION IN DATABASE
+    // =====================================================
+
+    await Notification.create(
+      [
+        {
+          title: solverNotification.title,
+
+          description: solverNotification.body,
+
+          notificationType: "private",
+
+          receivers: [user._id],
+
+          senderRole: "system",
+
+          isRead: false,
+        },
+      ],
+      {
+        session,
+      },
+    );
+
+    // =====================================================
+    // SAVE CREATOR NOTIFICATION
+    // =====================================================
+
+    if (pinCreator) {
+      await Notification.create(
+        [
+          {
+            title: creatorNotification.title,
+
+            description: creatorNotification.body,
+
+            notificationType: "private",
+
+            receivers: [pinCreator._id],
+
+            senderRole: "system",
+
+            isRead: false,
+          },
+        ],
+        {
+          session,
+        },
+      );
+    }
+
+    // =====================================================
+    // COMMIT TRANSACTION
+    // =====================================================
+
+    await session.commitTransaction();
+
+    // =====================================================
+    // SEND PUSH NOTIFICATIONS
+    // =====================================================
+
+    const notifications = [];
+
+    // -----------------------------------------
+    // Solver reward notification
+    // -----------------------------------------
+
+    if (solverNotification?.tokens?.length) {
+      notifications.push(sendNotification(solverNotification));
+    }
+
+    // -----------------------------------------
+    // Creator notification
+    // -----------------------------------------
+
+    if (creatorNotification?.tokens?.length) {
+      notifications.push(sendNotification(creatorNotification));
+    }
+
+    // -----------------------------------------
+    // LEVEL-UP NOTIFICATION
+    // -----------------------------------------
+
+    if (levelUpNotification?.tokens?.length) {
+      notifications.push(sendNotification(levelUpNotification));
+    }
+
+    if (actionHeroNotification?.tokens?.length) {
+      notifications.push(sendNotification(actionHeroNotification));
+    }
+
+    /*
+     * Transaction already committed.
+     * Push notification failure should not
+     * make solvePin fail.
+     */
+
+    await Promise.allSettled(notifications);
+
+    // =====================================================
+    // RESPONSE
+    // =====================================================
+
+    return res.status(200).json({
+      success: true,
+
+      message: "Task solved successfully and rewards distributed",
+
+      gainedReward: {
+        xp: validatorXP,
+
+        credits: validatorBounty,
+
+        baseXP: baseValidatorXP,
+
+        baseCredits: baseValidatorBounty,
+
+        isFirstPin: !!pin.isFirstPin,
+
+        boosts: {
+          beacon: beaconApplied,
+
+          doubleXP: doubleXPApplied,
+
+          creditMagnet: creditMagnetApplied,
+
+          pioneerLuck: pioneerLuckApplied,
+
+          hexParty: hexPartyActive,
+
+          megaphone: megaphoneBonusApplied,
+
+          fastTrackJury: fastTrackJuryApplied,
+        },
+      },
+
+      // ===================================================
+      // LEVEL UP INFORMATION
+      // ===================================================
+
+      levelUp:
+        Number(user.level) > oldLevel
+          ? {
+              previousLevel: oldLevel,
+
+              newLevel: user.level,
+
+              levelName: user.levelName,
+
+              emoji: levelData.emoji || "",
+
+              title: levelUpNotification?.title,
+
+              message: levelUpNotification?.body,
+            }
+          : null,
+
+      // ===================================================
+      // CURRENT USER
+      // ===================================================
+
+      currentUser: {
+        id: user._id,
+
+        name: user.name,
+
+        email: user.email,
+
+        profileImage: user.profileImage,
+
+        currentXP: user.xp,
+
+        currentCredits: user.credits,
+
+        level: user.level,
+
+        levelName: user.levelName,
+      },
+
+      // ===================================================
+      // PIN INFO
+      // ===================================================
+
+      pinInfo: {
+        id: pin._id,
+
+        status: pin.status,
+
+        pinStatus: pin.pinStatus,
+
+        solvedAt: pin.solvedAt,
+
+        bounty: pin.bounty,
+
+        xpScore: pin.xpScore,
+
+        description: pin.description,
+
+        location: pin.location,
+
+        images: pin.images,
+      },
+
+      // ===================================================
+      // VALIDATION INFO
+      // ===================================================
+
+      validationInfo: {
+        beforeImage: validation.beforeImage,
+
+        timeTaken: validation.timeTaken,
+
+        solvedAt: validation.solvedAt,
+
+        rewardDistributed: validation.rewardDistributed,
+
+        validatorReward: validation.validatorReward,
+      },
+
+      activeBoosts,
+
+      hexPartyActive,
     });
   } catch (error) {
     if (session.inTransaction()) {
       await session.abortTransaction();
     }
 
-    console.error(error);
+    console.error("solvePin error:", error);
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+
+      message: error.message || "Failed to solve pin",
     });
   } finally {
-    session.endSession();
+    await session.endSession();
   }
 };
 
@@ -2644,6 +3000,21 @@ export const makePinBeacon = async (req, res) => {
         pinId: pin._id,
         isBeacon: pin.isBeacon,
         beaconActive: false,
+        actionHero: {
+          level: actionHeroRank.level,
+
+          rank: actionHeroRank.name,
+
+          emoji: actionHeroRank.emoji,
+
+          pinsSolved: totalPinsSolved,
+
+          rankUnlocked: actionHeroRankUnlocked,
+
+          nextRank: actionHeroRank.nextRank,
+
+          maxRankReached: actionHeroRank.maxRankReached,
+        },
       },
     });
   } catch (error) {
@@ -4961,10 +5332,7 @@ export const validatePin = async (req, res) => {
     const { pinId } = req.params;
     const userId = req.user.id;
 
-    const {
-      currentLatitude,
-      currentLongitude,
-    } = req.body;
+    const { currentLatitude, currentLongitude } = req.body;
 
     // =====================================================
     // 2. GPS REQUIRED
@@ -4988,9 +5356,7 @@ export const validatePin = async (req, res) => {
     // 3. FIND USER
     // =====================================================
 
-    const user = await User.findById(userId).session(
-      session,
-    );
+    const user = await User.findById(userId).session(session);
 
     if (!user) {
       await session.abortTransaction();
@@ -5005,9 +5371,7 @@ export const validatePin = async (req, res) => {
     // 4. FIND PIN
     // =====================================================
 
-    const pin = await Pin.findById(pinId).session(
-      session,
-    );
+    const pin = await Pin.findById(pinId).session(session);
 
     if (!pin) {
       await session.abortTransaction();
@@ -5022,10 +5386,7 @@ export const validatePin = async (req, res) => {
     // 5. PREVENT CREATOR FROM VALIDATING OWN PIN
     // =====================================================
 
-    if (
-      pin.createdBy?.toString() ===
-      userId.toString()
-    ) {
+    if (pin.createdBy?.toString() === userId.toString()) {
       await session.abortTransaction();
 
       return res.status(400).json({
@@ -5040,8 +5401,7 @@ export const validatePin = async (req, res) => {
 
     if (
       pin.islocked === true &&
-      pin.lockedBy?.toString() !==
-        userId.toString()
+      pin.lockedBy?.toString() !== userId.toString()
     ) {
       await session.abortTransaction();
 
@@ -5056,35 +5416,30 @@ export const validatePin = async (req, res) => {
     // 7. ACTIVE BOOSTS
     // =====================================================
 
-    const activeBoosts =
-      await getActiveBoosts(userId);
+    const activeBoosts = await getActiveBoosts(userId);
 
-    const hexPartyActive =
-      await isHexPartyActive(pin.hexagonId);
+    const hexPartyActive = await isHexPartyActive(pin.hexagonId);
 
     // =====================================================
     // 8. GOLDEN CARGO RESERVATION
     // =====================================================
 
-    const reservedCargo =
-      await GoldenCargo.findOne({
-        pinId: pin._id,
-        expiresAt: {
-          $gt: new Date(),
-        },
-      }).session(session);
+    const reservedCargo = await GoldenCargo.findOne({
+      pinId: pin._id,
+      expiresAt: {
+        $gt: new Date(),
+      },
+    }).session(session);
 
     if (
       reservedCargo &&
-      reservedCargo.userId?.toString() !==
-        userId.toString()
+      reservedCargo.userId?.toString() !== userId.toString()
     ) {
       await session.abortTransaction();
 
       return res.status(403).json({
         success: false,
-        message:
-          "This resource pin is reserved by another Golden Cargo user",
+        message: "This resource pin is reserved by another Golden Cargo user",
       });
     }
 
@@ -5094,28 +5449,21 @@ export const validatePin = async (req, res) => {
 
     let activeCargo = null;
 
-    if (
-      pin.category ===
-      "Resources (Zero-Waste, Upcycling & Utilities)"
-    ) {
-      activeCargo =
-        await GoldenCargo.findOne({
-          userId,
-          expiresAt: {
-            $gt: new Date(),
-          },
-        }).session(session);
+    if (pin.category === "Resources (Zero-Waste, Upcycling & Utilities)") {
+      activeCargo = await GoldenCargo.findOne({
+        userId,
+        expiresAt: {
+          $gt: new Date(),
+        },
+      }).session(session);
 
       if (activeCargo) {
         let cargoHasPin = false;
 
         if (Array.isArray(activeCargo.pinId)) {
-          cargoHasPin =
-            activeCargo.pinId.some(
-              (id) =>
-                id.toString() ===
-                pin._id.toString(),
-            );
+          cargoHasPin = activeCargo.pinId.some(
+            (id) => id.toString() === pin._id.toString(),
+          );
 
           if (!cargoHasPin) {
             if (activeCargo.pinId.length >= 3) {
@@ -5123,8 +5471,7 @@ export const validatePin = async (req, res) => {
 
               return res.status(400).json({
                 success: false,
-                message:
-                  "Golden Cargo can reserve maximum 3 resource pins",
+                message: "Golden Cargo can reserve maximum 3 resource pins",
               });
             }
 
@@ -5134,13 +5481,10 @@ export const validatePin = async (req, res) => {
               session,
             });
 
-            pin.reservationExpiresAt =
-              activeCargo.expiresAt;
+            pin.reservationExpiresAt = activeCargo.expiresAt;
           }
         } else if (activeCargo.pinId) {
-          cargoHasPin =
-            activeCargo.pinId.toString() ===
-            pin._id.toString();
+          cargoHasPin = activeCargo.pinId.toString() === pin._id.toString();
         }
       }
     }
@@ -5149,10 +5493,7 @@ export const validatePin = async (req, res) => {
     // 10. VALIDATE PIN LOCATION
     // =====================================================
 
-    if (
-      !pin.location?.coordinates ||
-      pin.location.coordinates.length < 2
-    ) {
+    if (!pin.location?.coordinates || pin.location.coordinates.length < 2) {
       await session.abortTransaction();
 
       return res.status(400).json({
@@ -5161,30 +5502,22 @@ export const validatePin = async (req, res) => {
       });
     }
 
-    const pinLongitude = Number(
-      pin.location.coordinates[0],
-    );
+    const pinLongitude = Number(pin.location.coordinates[0]);
 
-    const pinLatitude = Number(
-      pin.location.coordinates[1],
-    );
+    const pinLatitude = Number(pin.location.coordinates[1]);
 
     // =====================================================
     // 11. LIVE GPS DISTANCE
     // =====================================================
 
-    const liveDistance =
-      calculateDistanceInMeters(
-        Number(currentLatitude),
-        Number(currentLongitude),
-        pinLatitude,
-        pinLongitude,
-      );
+    const liveDistance = calculateDistanceInMeters(
+      Number(currentLatitude),
+      Number(currentLongitude),
+      pinLatitude,
+      pinLongitude,
+    );
 
-    if (
-      liveDistance >
-      VALIDATION_CONFIG.MAX_DISTANCE_METERS
-    ) {
+    if (liveDistance > VALIDATION_CONFIG.MAX_DISTANCE_METERS) {
       await session.abortTransaction();
 
       return res.status(403).json({
@@ -5195,8 +5528,7 @@ export const validatePin = async (req, res) => {
           `${VALIDATION_CONFIG.MAX_DISTANCE_METERS} meters ` +
           `of the pin location`,
 
-        distance:
-          `${liveDistance.toFixed(2)} meters`,
+        distance: `${liveDistance.toFixed(2)} meters`,
       });
     }
 
@@ -5219,34 +5551,27 @@ export const validatePin = async (req, res) => {
     // =====================================================
 
     if (!activity) {
-      const cargo =
-        await GoldenCargo.findOne({
-          userId,
-          expiresAt: {
-            $gt: new Date(),
-          },
-        }).session(session);
+      const cargo = await GoldenCargo.findOne({
+        userId,
+        expiresAt: {
+          $gt: new Date(),
+        },
+      }).session(session);
 
       let cargoHasPin = false;
 
       if (cargo) {
         if (Array.isArray(cargo.pinId)) {
-          cargoHasPin =
-            cargo.pinId.some(
-              (id) =>
-                id.toString() ===
-                pin._id.toString(),
-            );
+          cargoHasPin = cargo.pinId.some(
+            (id) => id.toString() === pin._id.toString(),
+          );
         } else if (cargo.pinId) {
-          cargoHasPin =
-            cargo.pinId.toString() ===
-            pin._id.toString();
+          cargoHasPin = cargo.pinId.toString() === pin._id.toString();
         }
       }
 
       const isReservedResourcePin =
-        pin.category ===
-          "Resources (Zero-Waste, Upcycling & Utilities)" &&
+        pin.category === "Resources (Zero-Waste, Upcycling & Utilities)" &&
         cargo &&
         cargoHasPin;
 
@@ -5276,29 +5601,21 @@ export const validatePin = async (req, res) => {
     // 15. TRAVEL DISTANCE
     // =====================================================
 
-    const travelDistance = Number(
-      activity?.distance || 0,
-    );
+    const travelDistance = Number(activity?.distance || 0);
 
     // =====================================================
     // 16. TRAVEL XP
     // =====================================================
 
-    const baseTravelXP = Math.max(
-      1,
-      Math.floor(travelDistance / 100),
-    );
+    const baseTravelXP = Math.max(1, Math.floor(travelDistance / 100));
 
-    const travelXP =
-      calculateXPWithBoosts({
-        baseXP: baseTravelXP,
+    const travelXP = calculateXPWithBoosts({
+      baseXP: baseTravelXP,
 
-        doubleXP:
-          activeBoosts.Double_XP,
+      doubleXP: activeBoosts.Double_XP,
 
-        hexParty:
-          hexPartyActive,
-      });
+      hexParty: hexPartyActive,
+    });
 
     // =====================================================
     // 17. 5 CREDITS PER MILE
@@ -5306,31 +5623,50 @@ export const validatePin = async (req, res) => {
 
     const METERS_PER_MILE = 1609.344;
 
-    const milesTravelled =
-      travelDistance / METERS_PER_MILE;
+    const milesTravelled = travelDistance / METERS_PER_MILE;
 
-    const creditsEarned = Number(
-      (milesTravelled * 5).toFixed(2),
-    );
+    const creditsEarned = Number((milesTravelled * 5).toFixed(2));
 
     // =====================================================
     // 18. FIND VALIDATION
     // =====================================================
 
-    let validation =
-      await Validation.findOne({
-        pinID: pinId,
-      }).session(session);
+    let validation = await Validation.findOne({
+      pinID: pinId,
+    }).session(session);
+    // =====================================================
+    // NORMAL MODE CONSENSUS IS FINAL
+    // =====================================================
+
+    if (
+      pin.activePinMode !== "vanguard" &&
+      validation?.consensusStatus === "VERIFIED"
+    ) {
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+        message: "This pin has already been verified.",
+      });
+    }
+
+    if (
+      pin.activePinMode !== "vanguard" &&
+      validation?.consensusStatus === "FAKE"
+    ) {
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+        message: "This pin has already been marked as fake.",
+      });
+    }
 
     // =====================================================
     // 19. VALIDATION EXPIRY
     // =====================================================
 
-    if (
-      validation?.expiresAt &&
-      new Date() >
-        new Date(validation.expiresAt)
-    ) {
+    if (validation?.expiresAt && new Date() > new Date(validation.expiresAt)) {
       await session.abortTransaction();
 
       return res.status(400).json({
@@ -5344,20 +5680,16 @@ export const validatePin = async (req, res) => {
     // =====================================================
 
     if (validation) {
-      const alreadyVoted =
-        validation.votes?.some(
-          (vote) =>
-            vote.userId?.toString() ===
-            userId.toString(),
-        );
+      const alreadyVoted = validation.votes?.some(
+        (vote) => vote.userId?.toString() === userId.toString(),
+      );
 
       if (alreadyVoted) {
         await session.abortTransaction();
 
         return res.status(400).json({
           success: false,
-          message:
-            "You already voted on this pin",
+          message: "You already voted on this pin",
         });
       }
 
@@ -5365,33 +5697,25 @@ export const validatePin = async (req, res) => {
       // Backward compatibility
       // -----------------------------------------------
 
-      if (
-        validation.validatedBy?.toString() ===
-        userId.toString()
-      ) {
+      if (validation.validatedBy?.toString() === userId.toString()) {
         await session.abortTransaction();
 
         return res.status(400).json({
           success: false,
-          message:
-            "You already validated this pin",
+          message: "You already validated this pin",
         });
       }
 
-      const alreadyBeneficiary =
-        validation.beneficiaries?.some(
-          (id) =>
-            id.toString() ===
-            userId.toString(),
-        );
+      const alreadyBeneficiary = validation.beneficiaries?.some(
+        (id) => id.toString() === userId.toString(),
+      );
 
       if (alreadyBeneficiary) {
         await session.abortTransaction();
 
         return res.status(400).json({
           success: false,
-          message:
-            "You already validated this pin",
+          message: "You already validated this pin",
         });
       }
     }
@@ -5400,8 +5724,7 @@ export const validatePin = async (req, res) => {
     // 21. USER'S WEIGHT
     // =====================================================
 
-    const voteWeight =
-      getValidationWeight(user);
+    const voteWeight = getValidationWeight(user);
 
     // =====================================================
     // 22. VOTE SNAPSHOT
@@ -5415,31 +5738,21 @@ export const validatePin = async (req, res) => {
       weight: voteWeight,
 
       // Snapshot BEFORE trust reward
-      trustScore: Number(
-        user.trustScore || 0,
-      ),
+      trustScore: Number(user.trustScore || 0),
 
       level: Number(user.level || 1),
 
-      levelName:
-        user.levelName || null,
+      levelName: user.levelName || null,
 
       location: {
-        latitude: Number(
-          currentLatitude,
-        ),
+        latitude: Number(currentLatitude),
 
-        longitude: Number(
-          currentLongitude,
-        ),
+        longitude: Number(currentLongitude),
       },
 
-      distanceMeters: Number(
-        liveDistance,
-      ),
+      distanceMeters: Number(liveDistance),
 
-      xpEarned:
-        travelXP,
+      xpEarned: travelXP,
 
       creditsEarned,
     };
@@ -5464,8 +5777,7 @@ export const validatePin = async (req, res) => {
         // Source of truth
         votes: [voteData],
 
-        validWeight:
-          voteWeight,
+        validWeight: voteWeight,
 
         fakeWeight: 0,
 
@@ -5473,64 +5785,45 @@ export const validatePin = async (req, res) => {
 
         fakeVotes: 0,
 
-        confidenceScore:
-          voteWeight,
+        confidenceScore: voteWeight,
 
-        consensusStatus:
-          "PENDING",
+        consensusStatus: "PENDING",
       });
 
-      pin.validatedBy =
-        userId;
+      pin.validatedBy = userId;
 
-      pin.status =
-        "orange";
+      pin.status = "orange";
     } else {
       // ===================================================
       // MULTIPLE VALIDATOR
       // ===================================================
 
-      if (
-        !Array.isArray(
-          validation.votes,
-        )
-      ) {
+      if (!Array.isArray(validation.votes)) {
         validation.votes = [];
       }
 
-      validation.votes.push(
-        voteData,
-      );
+      validation.votes.push(voteData);
 
       // -----------------------------------------------
       // Keep legacy beneficiaries
       // -----------------------------------------------
 
-      if (
-        !validation.beneficiaries
-      ) {
+      if (!validation.beneficiaries) {
         validation.beneficiaries = [];
       }
 
-      validation.beneficiaries.push(
-        userId,
-      );
+      validation.beneficiaries.push(userId);
 
       if (!pin.beneficiaries) {
         pin.beneficiaries = [];
       }
 
-      const existsInPin =
-        pin.beneficiaries.some(
-          (id) =>
-            id.toString() ===
-            userId.toString(),
-        );
+      const existsInPin = pin.beneficiaries.some(
+        (id) => id.toString() === userId.toString(),
+      );
 
       if (!existsInPin) {
-        pin.beneficiaries.push(
-          userId,
-        );
+        pin.beneficiaries.push(userId);
       }
     }
 
@@ -5538,50 +5831,49 @@ export const validatePin = async (req, res) => {
     // 24. RECALCULATE CONSENSUS
     // =====================================================
 
-    const validVotes =
-      validation.votes.filter(
-        (vote) =>
-          vote.vote === "VALID",
-      );
+    const validVotes = validation.votes.filter((vote) => vote.vote === "VALID");
 
-    const fakeVotes =
-      validation.votes.filter(
-        (vote) =>
-          vote.vote === "FAKE",
-      );
+    const fakeVotes = validation.votes.filter((vote) => vote.vote === "FAKE");
 
-    validation.validWeight =
-      validVotes.reduce(
-        (total, vote) =>
-          total +
-          Number(vote.weight || 0),
-        0,
-      );
+    validation.validWeight = validVotes.reduce(
+      (total, vote) => total + Number(vote.weight || 0),
+      0,
+    );
 
-    validation.fakeWeight =
-      fakeVotes.reduce(
-        (total, vote) =>
-          total +
-          Number(vote.weight || 0),
-        0,
-      );
+    validation.fakeWeight = fakeVotes.reduce(
+      (total, vote) => total + Number(vote.weight || 0),
+      0,
+    );
 
-    validation.validVotes =
-      validVotes.length;
+    validation.validVotes = validVotes.length;
 
-    validation.fakeVotes =
-      fakeVotes.length;
+    validation.fakeVotes = fakeVotes.length;
 
-    validation.confidenceScore =
-      validation.validWeight -
-      validation.fakeWeight;
+    validation.confidenceScore = validation.validWeight - validation.fakeWeight;
 
     // =====================================================
     // 25. SYNC PIN SCORE
     // =====================================================
 
-    pin.pinScore =
-      validation.confidenceScore;
+    pin.pinScore = validation.confidenceScore;
+
+    // =====================================================
+    // NORMAL PIN VERIFIED CONSENSUS
+    // =====================================================
+
+    if (
+      pin.activePinMode !== "vanguard" &&
+      validation.consensusStatus === "PENDING" &&
+      validation.confidenceScore >= VALIDATION_CONFIG.VERIFIED_SCORE
+    ) {
+      validation.consensusStatus = "VERIFIED";
+
+      validation.consensusReachedAt = new Date();
+
+      validation.status = "green";
+
+      pin.pinStatus = "verified";
+    }
 
     // =====================================================
     // 26. PREPARE NOTIFICATION VARIABLES
@@ -5598,154 +5890,149 @@ export const validatePin = async (req, res) => {
     // =====================================================
 
     const becameVerified =
-      validation.consensusStatus !==
-        "VERIFIED" &&
-      validation.confidenceScore >=
-        VALIDATION_CONFIG.VERIFIED_SCORE;
+      validation.consensusStatus !== "VERIFIED" &&
+      validation.confidenceScore >= VALIDATION_CONFIG.VERIFIED_SCORE;
 
     if (becameVerified) {
       // ===================================================
       // MARK VERIFIED
       // ===================================================
 
-      validation.consensusStatus =
-        "VERIFIED";
+      validation.consensusStatus = "VERIFIED";
 
-      validation.consensusReachedAt =
-        new Date();
+      validation.consensusReachedAt = new Date();
 
-      validation.status =
-        "green";
+      validation.status = "green";
 
-      pin.pinStatus =
-        "verified";
+      pin.pinStatus = "verified";
 
-      pin.status =
-        "green";
+      pin.status = "green";
 
       // ===================================================
       // REWARD PIN CREATOR
       // ===================================================
 
-      const pinCreator =
-        await User.findById(
-          pin.createdBy,
-        ).session(session);
+      const pinCreator = await User.findById(pin.createdBy).session(session);
 
       if (pinCreator) {
-        const creatorOldLevel =
-          Number(
-            pinCreator.level || 1,
-          );
+        const creatorOldLevel = Number(pinCreator.level || 1);
 
         // -----------------------------------------------
         // Creator XP
         // -----------------------------------------------
 
         pinCreator.xp =
-          Number(
-            pinCreator.xp || 0,
-          ) +
-          Number(
-            VALIDATION_CONFIG
-              .CREATOR_VERIFIED_XP ??
-              15,
-          );
+          Number(pinCreator.xp || 0) +
+          Number(VALIDATION_CONFIG.CREATOR_VERIFIED_XP ?? 15);
 
         // -----------------------------------------------
         // Creator trust
         // -----------------------------------------------
 
-        pinCreator.trustScore =
-          Math.min(
-            99.9,
+        pinCreator.trustScore = Math.min(
+          99.9,
 
-            Number(
-              (
-                Number(
-                  pinCreator.trustScore ||
-                    0,
-                ) +
-                Number(
-                  VALIDATION_CONFIG
-                    .CREATOR_TRUST_REWARD ??
-                    0.5,
-                )
-              ).toFixed(1),
-            ),
-          );
+          Number(
+            (
+              Number(pinCreator.trustScore || 0) +
+              Number(VALIDATION_CONFIG.CREATOR_TRUST_REWARD ?? 0.5)
+            ).toFixed(1),
+          ),
+        );
 
         // -----------------------------------------------
         // Recalculate creator level
         // -----------------------------------------------
 
-        const creatorLevelData =
-          getLevelData(
-            pinCreator.xp,
+        const creatorLevelData = getLevelData(pinCreator.xp);
+
+        pinCreator.level = creatorLevelData.level;
+
+        pinCreator.levelName = creatorLevelData.name;
+
+        const oldCartographerRank =
+          pinCreator.skillTrees?.cartographer?.rank || "Unranked";
+
+        if (!pinCreator.skillTrees) {
+          pinCreator.skillTrees = {};
+        }
+
+        if (!pinCreator.skillTrees.cartographer) {
+          pinCreator.skillTrees.cartographer = {
+            verifiedPins: 0,
+            rank: "Unranked",
+            emoji: "",
+            level: 1,
+          };
+        }
+
+        // Pin actually VERIFIED hua hai
+        pinCreator.skillTrees.cartographer.verifiedPins =
+          Number(pinCreator.skillTrees.cartographer.verifiedPins || 0) + 1;
+
+        const cartographerData = getSkillRank(
+          pinCreator.skillTrees.cartographer.verifiedPins,
+          CARTOGRAPHER_RANKS,
+        );
+
+        pinCreator.skillTrees.cartographer.rank = cartographerData.name;
+        pinCreator.skillTrees.cartographer.emoji = cartographerData.emoji;
+        pinCreator.skillTrees.cartographer.level = cartographerData.level;
+
+        pinCreator.markModified("skillTrees");
+
+        const cartographerRankChanged =
+          oldCartographerRank !== cartographerData.name;
+
+        if (cartographerRankChanged) {
+          const title = `${cartographerData.emoji} Cartographer Rank Unlocked!`;
+
+          const body =
+            `Congratulations! You are now ${cartographerData.name} ` +
+            `after reaching ${pinCreator.skillTrees.cartographer.verifiedPins} verified pins.`;
+
+          await Notification.create(
+            [
+              {
+                title,
+                description: body,
+                notificationType: "private",
+                receivers: [pinCreator._id],
+                senderRole: "system",
+              },
+            ],
+            { session },
           );
-
-        pinCreator.level =
-          creatorLevelData.level;
-
-        pinCreator.levelName =
-          creatorLevelData.name;
+        }
 
         // -----------------------------------------------
         // Creator level-up notification
         // -----------------------------------------------
 
-        if (
-          Number(
-            creatorLevelData.level,
-          ) > creatorOldLevel
-        ) {
-          const creatorLevelMessage =
-            getLevelUpNotification({
-              level:
-                creatorLevelData.level,
+        if (Number(creatorLevelData.level) > creatorOldLevel) {
+          const creatorLevelMessage = getLevelUpNotification({
+            level: creatorLevelData.level,
 
-              levelName:
-                creatorLevelData.name,
+            levelName: creatorLevelData.name,
 
-              emoji:
-                creatorLevelData.emoji ||
-                "",
-            });
+            emoji: creatorLevelData.emoji || "",
+          });
 
           creatorLevelUpNotification = {
-            tokens:
-              pinCreator.fcmToken
-                ? [
-                    pinCreator.fcmToken,
-                  ]
-                : [],
+            tokens: pinCreator.fcmToken ? [pinCreator.fcmToken] : [],
 
-            title:
-              creatorLevelMessage.title,
+            title: creatorLevelMessage.title,
 
-            body:
-              creatorLevelMessage.body,
+            body: creatorLevelMessage.body,
 
             data: {
-              type:
-                "LEVEL_UP",
+              type: "LEVEL_UP",
 
-              level:
-                String(
-                  creatorLevelData.level,
-                ),
+              level: String(creatorLevelData.level),
 
-              levelName:
-                String(
-                  creatorLevelData.name ||
-                    "",
-                ),
+              levelName: String(creatorLevelData.name || ""),
 
-              emoji:
-                String(
-                  creatorLevelData.emoji ||
-                    "",
-                ),
+              emoji: String(creatorLevelData.emoji || ""),
             },
           };
 
@@ -5753,21 +6040,15 @@ export const validatePin = async (req, res) => {
           await Notification.create(
             [
               {
-                title:
-                  creatorLevelMessage.title,
+                title: creatorLevelMessage.title,
 
-                description:
-                  creatorLevelMessage.body,
+                description: creatorLevelMessage.body,
 
-                notificationType:
-                  "private",
+                notificationType: "private",
 
-                receivers: [
-                  pinCreator._id,
-                ],
+                receivers: [pinCreator._id],
 
-                senderRole:
-                  "system",
+                senderRole: "system",
               },
             ],
             {
@@ -5785,37 +6066,20 @@ export const validatePin = async (req, res) => {
         // -----------------------------------------------
 
         pinVerifiedNotification = {
-          tokens:
-            pinCreator.fcmToken
-              ? [
-                  pinCreator.fcmToken,
-                ]
-              : [],
+          tokens: pinCreator.fcmToken ? [pinCreator.fcmToken] : [],
 
-          title:
-            "🎉 Pin Verified",
+          title: "🎉 Pin Verified",
 
           body:
             `Congratulations! Your pin has been verified. ` +
-            `You earned ${
-              VALIDATION_CONFIG
-                .CREATOR_VERIFIED_XP ??
-              15
-            } XP.`,
+            `You earned ${VALIDATION_CONFIG.CREATOR_VERIFIED_XP ?? 15} XP.`,
 
           data: {
-            type:
-              "PIN_VERIFIED",
+            type: "PIN_VERIFIED",
 
-            pinId:
-              pin._id.toString(),
+            pinId: pin._id.toString(),
 
-            xp:
-              String(
-                VALIDATION_CONFIG
-                  .CREATOR_VERIFIED_XP ??
-                  15,
-              ),
+            xp: String(VALIDATION_CONFIG.CREATOR_VERIFIED_XP ?? 15),
           },
         };
       }
@@ -5829,42 +6093,26 @@ export const validatePin = async (req, res) => {
     // =====================================================
 
     if (
-      validation.consensusStatus ===
-        "VERIFIED" &&
-      pin.fakereportingBy?.length >
-        0 &&
+      validation.consensusStatus === "VERIFIED" &&
+      pin.fakereportingBy?.length > 0 &&
       !pin.fakeReportersPenalized
     ) {
-      const fakeReporters =
-        await User.find({
-          _id: {
-            $in:
-              pin.fakereportingBy,
-          },
-        }).session(session);
+      const fakeReporters = await User.find({
+        _id: {
+          $in: pin.fakereportingBy,
+        },
+      }).session(session);
 
-      for (
-        const reporter of fakeReporters
-      ) {
+      for (const reporter of fakeReporters) {
         const penalty = Number(
-          VALIDATION_CONFIG
-            .FAKE_CREATOR_TRUST_PENALTY ??
-            15,
+          VALIDATION_CONFIG.FAKE_CREATOR_TRUST_PENALTY ?? 15,
         );
 
-        reporter.trustScore =
-          Math.max(
-            0,
+        reporter.trustScore = Math.max(
+          0,
 
-            Number(
-              (
-                Number(
-                  reporter.trustScore ||
-                    0,
-                ) - penalty
-              ).toFixed(1),
-            ),
-          );
+          Number((Number(reporter.trustScore || 0) - penalty).toFixed(1)),
+        );
 
         // -----------------------------------------------
         // Current ban / shadowban rule
@@ -5872,14 +6120,9 @@ export const validatePin = async (req, res) => {
 
         if (
           reporter.trustScore <
-          Number(
-            VALIDATION_CONFIG
-              .SHADOWBAN_TRUST_THRESHOLD ??
-              40,
-          )
+          Number(VALIDATION_CONFIG.SHADOWBAN_TRUST_THRESHOLD ?? 40)
         ) {
-          reporter.status =
-            "banned";
+          reporter.status = "banned";
         }
 
         await reporter.save({
@@ -5889,14 +6132,11 @@ export const validatePin = async (req, res) => {
         await Fine.create(
           [
             {
-              userId:
-                reporter._id,
+              userId: reporter._id,
 
-              amount:
-                penalty,
+              amount: penalty,
 
-              reason:
-                `False fake report on verified pin ${pin._id}`,
+              reason: `False fake report on verified pin ${pin._id}`,
             },
           ],
           {
@@ -5905,139 +6145,90 @@ export const validatePin = async (req, res) => {
         );
       }
 
-      pin.fakeReportersPenalized =
-        true;
+      pin.fakeReportersPenalized = true;
     }
 
     // =====================================================
     // 29. VALIDATOR REWARD + LEVEL UP
     // =====================================================
 
-    const oldLevel =
-      Number(user.level || 1);
+    const oldLevel = Number(user.level || 1);
 
-    const updatedXP =
-      Number(user.xp || 0) +
-      Number(travelXP || 0);
+    const updatedXP = Number(user.xp || 0) + Number(travelXP || 0);
 
     /*
      * Keep your existing helper because it may contain
      * other level-related logic.
      */
 
-    await checkLevelUp(
-      user,
-      updatedXP,
-      session,
-    );
+    await checkLevelUp(user, updatedXP, session);
 
     // -----------------------------------------------
     // Add XP
     // -----------------------------------------------
 
-    user.xp =
-      updatedXP;
+    user.xp = updatedXP;
 
     // -----------------------------------------------
     // 5 credits / mile
     // -----------------------------------------------
 
-    user.credits =
-      Number(user.credits || 0) +
-      Number(creditsEarned || 0);
+    user.credits = Number(user.credits || 0) + Number(creditsEarned || 0);
 
     // -----------------------------------------------
     // Leaderboard
     // -----------------------------------------------
 
-    await updateLeaderboardXP(
-      user._id,
-      travelXP,
-      session,
-    );
+    await updateLeaderboardXP(user._id, travelXP, session);
 
     // -----------------------------------------------
     // Trust reward
     // -----------------------------------------------
 
-    user.trustScore =
-      Math.min(
-        99.9,
+    user.trustScore = Math.min(
+      99.9,
 
-        Number(
-          (
-            Number(
-              user.trustScore || 0,
-            ) + 0.1
-          ).toFixed(1),
-        ),
-      );
+      Number((Number(user.trustScore || 0) + 0.1).toFixed(1)),
+    );
 
     // =====================================================
     // 30. FINAL LEVEL
     // =====================================================
 
-    const levelData =
-      getLevelData(user.xp);
+    const levelData = getLevelData(user.xp);
 
-    user.level =
-      levelData.level;
+    user.level = levelData.level;
 
-    user.levelName =
-      levelData.name;
+    user.levelName = levelData.name;
 
     // =====================================================
     // 31. VALIDATOR LEVEL-UP NOTIFICATION
     // =====================================================
 
-    if (
-      Number(levelData.level) >
-      oldLevel
-    ) {
-      const levelMessage =
-        getLevelUpNotification({
-          level:
-            levelData.level,
+    if (Number(levelData.level) > oldLevel) {
+      const levelMessage = getLevelUpNotification({
+        level: levelData.level,
 
-          levelName:
-            levelData.name,
+        levelName: levelData.name,
 
-          emoji:
-            levelData.emoji || "",
-        });
+        emoji: levelData.emoji || "",
+      });
 
       validatorLevelUpNotification = {
-        tokens:
-          user.fcmToken
-            ? [user.fcmToken]
-            : [],
+        tokens: user.fcmToken ? [user.fcmToken] : [],
 
-        title:
-          levelMessage.title,
+        title: levelMessage.title,
 
-        body:
-          levelMessage.body,
+        body: levelMessage.body,
 
         data: {
-          type:
-            "LEVEL_UP",
+          type: "LEVEL_UP",
 
-          level:
-            String(
-              levelData.level,
-            ),
+          level: String(levelData.level),
 
-          levelName:
-            String(
-              levelData.name ||
-                "",
-            ),
+          levelName: String(levelData.name || ""),
 
-          emoji:
-            String(
-              levelData.emoji ||
-                "",
-            ),
+          emoji: String(levelData.emoji || ""),
         },
       };
 
@@ -6048,21 +6239,15 @@ export const validatePin = async (req, res) => {
       await Notification.create(
         [
           {
-            title:
-              levelMessage.title,
+            title: levelMessage.title,
 
-            description:
-              levelMessage.body,
+            description: levelMessage.body,
 
-            notificationType:
-              "private",
+            notificationType: "private",
 
-            receivers: [
-              user._id,
-            ],
+            receivers: [user._id],
 
-            senderRole:
-              "system",
+            senderRole: "system",
           },
         ],
         {
@@ -6079,10 +6264,9 @@ export const validatePin = async (req, res) => {
     // 32. UPDATE USER STATS
     // =====================================================
 
-    let userStats =
-      await States.findOne({
-        user: userId,
-      }).session(session);
+    let userStats = await States.findOne({
+      user: userId,
+    }).session(session);
 
     if (!userStats) {
       userStats = new States({
@@ -6091,11 +6275,7 @@ export const validatePin = async (req, res) => {
         pinsValidated: 1,
       });
     } else {
-      userStats.pinsValidated =
-        Number(
-          userStats.pinsValidated ||
-            0,
-        ) + 1;
+      userStats.pinsValidated = Number(userStats.pinsValidated || 0) + 1;
     }
 
     await userStats.save({
@@ -6123,21 +6303,15 @@ export const validatePin = async (req, res) => {
         {
           userId,
 
-          activityType:
-            "pin_validated",
+          activityType: "pin_validated",
 
-          pinId:
-            pin._id,
+          pinId: pin._id,
 
-          pinTitle:
-            pin.description ||
-            "Pin Validation",
+          pinTitle: pin.description || "Pin Validation",
 
-          images:
-            pin.images || [],
+          images: pin.images || [],
 
-          xpEarned:
-            travelXP,
+          xpEarned: travelXP,
 
           /*
            * Your current Activity schema uses
@@ -6149,39 +6323,27 @@ export const validatePin = async (req, res) => {
 
           creditsSpent: 0,
 
-          distance:
-            travelDistance,
+          distance: travelDistance,
 
           activityLocation: {
-            latitude:
-              pinLatitude,
+            latitude: pinLatitude,
 
-            longitude:
-              pinLongitude,
+            longitude: pinLongitude,
           },
 
           startLocation: {
-            latitude:
-              Number(
-                currentLatitude,
-              ),
+            latitude: Number(currentLatitude),
 
-            longitude:
-              Number(
-                currentLongitude,
-              ),
+            longitude: Number(currentLongitude),
           },
 
           endLocation: {
-            latitude:
-              pinLatitude,
+            latitude: pinLatitude,
 
-            longitude:
-              pinLongitude,
+            longitude: pinLongitude,
           },
 
-          status:
-            "completed",
+          status: "completed",
         },
       ],
       {
@@ -6193,67 +6355,37 @@ export const validatePin = async (req, res) => {
     // 35. PIN CREATOR
     // =====================================================
 
-    const pinCreator =
-      await User.findById(
-        pin.createdBy,
-      )
-        .select(
-          "fcmToken name",
-        )
-        .session(session);
+    const pinCreator = await User.findById(pin.createdBy)
+      .select("fcmToken name")
+      .session(session);
 
     // =====================================================
     // 36. VALIDATOR REWARD NOTIFICATION
     // =====================================================
 
     const validatorRewardNotification = {
-      tokens:
-        user.fcmToken
-          ? [user.fcmToken]
-          : [],
+      tokens: user.fcmToken ? [user.fcmToken] : [],
 
-      title:
-        "✅ Pin Validated",
+      title: "✅ Pin Validated",
 
       body:
-        `You travelled ${milesTravelled.toFixed(
-          2,
-        )} miles and earned ` +
+        `You travelled ${milesTravelled.toFixed(2)} miles and earned ` +
         `${travelXP} XP and ${creditsEarned} Credits.`,
 
       data: {
-        type:
-          "PIN_VALIDATED",
+        type: "PIN_VALIDATED",
 
-        pinId:
-          pin._id.toString(),
+        pinId: pin._id.toString(),
 
-        xp:
-          String(travelXP),
+        xp: String(travelXP),
 
-        credits:
-          String(
-            creditsEarned,
-          ),
+        credits: String(creditsEarned),
 
-        milesTravelled:
-          String(
-            Number(
-              milesTravelled.toFixed(
-                2,
-              ),
-            ),
-          ),
+        milesTravelled: String(Number(milesTravelled.toFixed(2))),
 
-        voteWeight:
-          String(
-            voteWeight,
-          ),
+        voteWeight: String(voteWeight),
 
-        confidenceScore:
-          String(
-            validation.confidenceScore,
-          ),
+        confidenceScore: String(validation.confidenceScore),
       },
     };
 
@@ -6262,38 +6394,22 @@ export const validatePin = async (req, res) => {
     // =====================================================
 
     const creatorNotification = {
-      tokens:
-        pinCreator?.fcmToken
-          ? [
-              pinCreator.fcmToken,
-            ]
-          : [],
+      tokens: pinCreator?.fcmToken ? [pinCreator.fcmToken] : [],
 
-      title:
-        "📍 Pin Validation",
+      title: "📍 Pin Validation",
 
-      body:
-        `${user.name} validated your pin.`,
+      body: `${user.name} validated your pin.`,
 
       data: {
-        type:
-          "PIN_VALIDATED_BY_USER",
+        type: "PIN_VALIDATED_BY_USER",
 
-        pinId:
-          pin._id.toString(),
+        pinId: pin._id.toString(),
 
-        validatorId:
-          user._id.toString(),
+        validatorId: user._id.toString(),
 
-        voteWeight:
-          String(
-            voteWeight,
-          ),
+        voteWeight: String(voteWeight),
 
-        confidenceScore:
-          String(
-            validation.confidenceScore,
-          ),
+        confidenceScore: String(validation.confidenceScore),
       },
     };
 
@@ -6304,21 +6420,15 @@ export const validatePin = async (req, res) => {
     await Notification.create(
       [
         {
-          title:
-            validatorRewardNotification.title,
+          title: validatorRewardNotification.title,
 
-          description:
-            validatorRewardNotification.body,
+          description: validatorRewardNotification.body,
 
-          notificationType:
-            "private",
+          notificationType: "private",
 
-          receivers: [
-            user._id,
-          ],
+          receivers: [user._id],
 
-          senderRole:
-            "system",
+          senderRole: "system",
         },
       ],
       {
@@ -6334,21 +6444,15 @@ export const validatePin = async (req, res) => {
       await Notification.create(
         [
           {
-            title:
-              creatorNotification.title,
+            title: creatorNotification.title,
 
-            description:
-              creatorNotification.body,
+            description: creatorNotification.body,
 
-            notificationType:
-              "private",
+            notificationType: "private",
 
-            receivers: [
-              pinCreator._id,
-            ],
+            receivers: [pinCreator._id],
 
-            senderRole:
-              "system",
+            senderRole: "system",
           },
         ],
         {
@@ -6370,63 +6474,28 @@ export const validatePin = async (req, res) => {
     const notifications = [];
 
     // Validator reward
-    if (
-      validatorRewardNotification
-        ?.tokens?.length
-    ) {
-      notifications.push(
-        sendNotification(
-          validatorRewardNotification,
-        ),
-      );
+    if (validatorRewardNotification?.tokens?.length) {
+      notifications.push(sendNotification(validatorRewardNotification));
     }
 
     // Creator validation
-    if (
-      creatorNotification
-        ?.tokens?.length
-    ) {
-      notifications.push(
-        sendNotification(
-          creatorNotification,
-        ),
-      );
+    if (creatorNotification?.tokens?.length) {
+      notifications.push(sendNotification(creatorNotification));
     }
 
     // Pin verified
-    if (
-      pinVerifiedNotification
-        ?.tokens?.length
-    ) {
-      notifications.push(
-        sendNotification(
-          pinVerifiedNotification,
-        ),
-      );
+    if (pinVerifiedNotification?.tokens?.length) {
+      notifications.push(sendNotification(pinVerifiedNotification));
     }
 
     // Validator level up
-    if (
-      validatorLevelUpNotification
-        ?.tokens?.length
-    ) {
-      notifications.push(
-        sendNotification(
-          validatorLevelUpNotification,
-        ),
-      );
+    if (validatorLevelUpNotification?.tokens?.length) {
+      notifications.push(sendNotification(validatorLevelUpNotification));
     }
 
     // Creator level up
-    if (
-      creatorLevelUpNotification
-        ?.tokens?.length
-    ) {
-      notifications.push(
-        sendNotification(
-          creatorLevelUpNotification,
-        ),
-      );
+    if (creatorLevelUpNotification?.tokens?.length) {
+      notifications.push(sendNotification(creatorLevelUpNotification));
     }
 
     /*
@@ -6436,9 +6505,7 @@ export const validatePin = async (req, res) => {
      * make validation API fail.
      */
 
-    await Promise.allSettled(
-      notifications,
-    );
+    await Promise.allSettled(notifications);
 
     // =====================================================
     // 42. RESPONSE
@@ -6447,145 +6514,91 @@ export const validatePin = async (req, res) => {
     return res.status(200).json({
       success: true,
 
-      message:
-        becameVerified
-          ? "Pin validated and verified successfully"
-          : "Pin validated successfully",
+      message: becameVerified
+        ? "Pin validated and verified successfully"
+        : "Pin validated successfully",
 
-      validatorType:
-        isFirstValidator
-          ? "PRIMARY"
-          : "SUPPORTING",
+      validatorType: isFirstValidator ? "PRIMARY" : "SUPPORTING",
 
       vote: {
-        userId:
-          user._id,
+        userId: user._id,
 
-        type:
-          "VALID",
+        type: "VALID",
 
-        weight:
-          voteWeight,
+        weight: voteWeight,
 
         /*
          * Snapshot used for vote was before
          * the +0.1 reward.
          */
-        trustScore:
-          user.trustScore,
+        trustScore: user.trustScore,
 
-        level:
-          user.level,
+        level: user.level,
 
-        levelName:
-          user.levelName,
+        levelName: user.levelName,
       },
 
       consensus: {
-        validWeight:
-          validation.validWeight,
+        validWeight: validation.validWeight,
 
-        fakeWeight:
-          validation.fakeWeight,
+        fakeWeight: validation.fakeWeight,
 
-        validVotes:
-          validation.validVotes,
+        validVotes: validation.validVotes,
 
-        fakeVotes:
-          validation.fakeVotes,
+        fakeVotes: validation.fakeVotes,
 
-        confidenceScore:
-          validation.confidenceScore,
+        confidenceScore: validation.confidenceScore,
 
-        verifiedThreshold:
-          VALIDATION_CONFIG
-            .VERIFIED_SCORE,
+        verifiedThreshold: VALIDATION_CONFIG.VERIFIED_SCORE,
 
-        fakeThreshold:
-          VALIDATION_CONFIG
-            .FAKE_SCORE,
+        fakeThreshold: VALIDATION_CONFIG.FAKE_SCORE,
 
-        status:
-          validation.consensusStatus,
+        status: validation.consensusStatus,
       },
 
       rewards: {
-        distanceMeters:
-          travelDistance,
+        distanceMeters: travelDistance,
 
-        milesTravelled:
-          Number(
-            milesTravelled.toFixed(
-              2,
-            ),
-          ),
+        milesTravelled: Number(milesTravelled.toFixed(2)),
 
-        baseXP:
-          baseTravelXP,
+        baseXP: baseTravelXP,
 
-        xpEarned:
-          travelXP,
+        xpEarned: travelXP,
 
         creditsEarned,
 
-        creditRate:
-          "5 credits per mile",
+        creditRate: "5 credits per mile",
 
-        trustScoreEarned:
-          0.1,
+        trustScoreEarned: 0.1,
       },
 
       levelUp:
-        Number(user.level) >
-        oldLevel
+        Number(user.level) > oldLevel
           ? {
-              previousLevel:
-                oldLevel,
+              previousLevel: oldLevel,
 
-              newLevel:
-                user.level,
+              newLevel: user.level,
 
-              levelName:
-                user.levelName,
+              levelName: user.levelName,
 
-              emoji:
-                levelData.emoji ||
-                "",
+              emoji: levelData.emoji || "",
             }
           : null,
 
       pinData: {
-        pinScore:
-          pin.pinScore,
+        pinScore: pin.pinScore,
 
-        pinStatus:
-          pin.pinStatus,
+        pinStatus: pin.pinStatus,
 
-        status:
-          pin.status,
+        status: pin.status,
       },
 
       distanceInfo: {
-        liveDistanceMeters:
-          Number(
-            liveDistance.toFixed(
-              2,
-            ),
-          ),
+        liveDistanceMeters: Number(liveDistance.toFixed(2)),
 
-        travelDistanceMeters:
-          Number(
-            travelDistance.toFixed(
-              2,
-            ),
-          ),
+        travelDistanceMeters: Number(travelDistance.toFixed(2)),
 
-        travelDistanceMiles:
-          Number(
-            milesTravelled.toFixed(
-              2,
-            ),
-          ),
+        travelDistanceMiles: Number(milesTravelled.toFixed(2)),
       },
 
       activeBoosts,
@@ -6593,23 +6606,16 @@ export const validatePin = async (req, res) => {
       hexPartyActive,
     });
   } catch (error) {
-    if (
-      session.inTransaction()
-    ) {
+    if (session.inTransaction()) {
       await session.abortTransaction();
     }
 
-    console.error(
-      "validatePin error:",
-      error,
-    );
+    console.error("validatePin error:", error);
 
     return res.status(500).json({
       success: false,
 
-      message:
-        error.message ||
-        "Failed to validate pin",
+      message: error.message || "Failed to validate pin",
     });
   } finally {
     await session.endSession();
@@ -6629,10 +6635,7 @@ export const fakePin = async (req, res) => {
     const userId = req.user.id;
     const { pinId } = req.params;
 
-    const {
-      currentLatitude,
-      currentLongitude,
-    } = req.body;
+    const { currentLatitude, currentLongitude } = req.body;
 
     // =====================================================
     // 2. GPS REQUIRED
@@ -6656,9 +6659,7 @@ export const fakePin = async (req, res) => {
     // 3. FIND USER
     // =====================================================
 
-    const user = await User.findById(userId).session(
-      session,
-    );
+    const user = await User.findById(userId).session(session);
 
     if (!user) {
       await session.abortTransaction();
@@ -6673,9 +6674,7 @@ export const fakePin = async (req, res) => {
     // 4. FIND PIN
     // =====================================================
 
-    const pin = await Pin.findById(pinId).session(
-      session,
-    );
+    const pin = await Pin.findById(pinId).session(session);
 
     if (!pin) {
       await session.abortTransaction();
@@ -6690,16 +6689,12 @@ export const fakePin = async (req, res) => {
     // 5. PREVENT CREATOR FROM REPORTING OWN PIN
     // =====================================================
 
-    if (
-      pin.createdBy?.toString() ===
-      userId.toString()
-    ) {
+    if (pin.createdBy?.toString() === userId.toString()) {
       await session.abortTransaction();
 
       return res.status(400).json({
         success: false,
-        message:
-          "You cannot report your own pin as fake",
+        message: "You cannot report your own pin as fake",
       });
     }
 
@@ -6709,8 +6704,7 @@ export const fakePin = async (req, res) => {
 
     if (
       pin.islocked === true &&
-      pin.lockedBy?.toString() !==
-        userId.toString()
+      pin.lockedBy?.toString() !== userId.toString()
     ) {
       await session.abortTransaction();
 
@@ -6725,37 +6719,32 @@ export const fakePin = async (req, res) => {
     // 7. ACTIVE BOOSTS
     // =====================================================
 
-    const activeBoosts =
-      await getActiveBoosts(userId);
+    const activeBoosts = await getActiveBoosts(userId);
 
-    const hexPartyActive =
-      await isHexPartyActive(pin.hexagonId);
+    const hexPartyActive = await isHexPartyActive(pin.hexagonId);
 
     // =====================================================
     // 8. GOLDEN CARGO RESERVATION CHECK
     // =====================================================
 
-    const reservedCargo =
-      await GoldenCargo.findOne({
-        pinId: pin._id,
+    const reservedCargo = await GoldenCargo.findOne({
+      pinId: pin._id,
 
-        expiresAt: {
-          $gt: new Date(),
-        },
-      }).session(session);
+      expiresAt: {
+        $gt: new Date(),
+      },
+    }).session(session);
 
     if (
       reservedCargo &&
-      reservedCargo.userId?.toString() !==
-        userId.toString()
+      reservedCargo.userId?.toString() !== userId.toString()
     ) {
       await session.abortTransaction();
 
       return res.status(403).json({
         success: false,
 
-        message:
-          "This resource pin is reserved by another Golden Cargo user",
+        message: "This resource pin is reserved by another Golden Cargo user",
       });
     }
 
@@ -6763,10 +6752,7 @@ export const fakePin = async (req, res) => {
     // 9. PIN LOCATION CHECK
     // =====================================================
 
-    if (
-      !pin.location?.coordinates ||
-      pin.location.coordinates.length < 2
-    ) {
+    if (!pin.location?.coordinates || pin.location.coordinates.length < 2) {
       await session.abortTransaction();
 
       return res.status(400).json({
@@ -6775,30 +6761,22 @@ export const fakePin = async (req, res) => {
       });
     }
 
-    const pinLongitude = Number(
-      pin.location.coordinates[0],
-    );
+    const pinLongitude = Number(pin.location.coordinates[0]);
 
-    const pinLatitude = Number(
-      pin.location.coordinates[1],
-    );
+    const pinLatitude = Number(pin.location.coordinates[1]);
 
     // =====================================================
     // 10. LIVE GPS DISTANCE
     // =====================================================
 
-    const liveDistance =
-      calculateDistanceInMeters(
-        Number(currentLatitude),
-        Number(currentLongitude),
-        pinLatitude,
-        pinLongitude,
-      );
+    const liveDistance = calculateDistanceInMeters(
+      Number(currentLatitude),
+      Number(currentLongitude),
+      pinLatitude,
+      pinLongitude,
+    );
 
-    if (
-      liveDistance >
-      VALIDATION_CONFIG.MAX_DISTANCE_METERS
-    ) {
+    if (liveDistance > VALIDATION_CONFIG.MAX_DISTANCE_METERS) {
       await session.abortTransaction();
 
       return res.status(403).json({
@@ -6809,8 +6787,7 @@ export const fakePin = async (req, res) => {
           `${VALIDATION_CONFIG.MAX_DISTANCE_METERS} meters ` +
           `of the pin location`,
 
-        distance:
-          `${liveDistance.toFixed(2)} meters`,
+        distance: `${liveDistance.toFixed(2)} meters`,
       });
     }
 
@@ -6833,37 +6810,28 @@ export const fakePin = async (req, res) => {
     // =====================================================
 
     if (!activity) {
-      const activeCargo =
-        await GoldenCargo.findOne({
-          userId,
+      const activeCargo = await GoldenCargo.findOne({
+        userId,
 
-          expiresAt: {
-            $gt: new Date(),
-          },
-        }).session(session);
+        expiresAt: {
+          $gt: new Date(),
+        },
+      }).session(session);
 
       let cargoHasPin = false;
 
       if (activeCargo) {
-        if (
-          Array.isArray(activeCargo.pinId)
-        ) {
-          cargoHasPin =
-            activeCargo.pinId.some(
-              (id) =>
-                id.toString() ===
-                pin._id.toString(),
-            );
+        if (Array.isArray(activeCargo.pinId)) {
+          cargoHasPin = activeCargo.pinId.some(
+            (id) => id.toString() === pin._id.toString(),
+          );
         } else if (activeCargo.pinId) {
-          cargoHasPin =
-            activeCargo.pinId.toString() ===
-            pin._id.toString();
+          cargoHasPin = activeCargo.pinId.toString() === pin._id.toString();
         }
       }
 
       const isReservedResourcePin =
-        pin.category ===
-          "Resources (Zero-Waste, Upcycling & Utilities)" &&
+        pin.category === "Resources (Zero-Waste, Upcycling & Utilities)" &&
         activeCargo &&
         cargoHasPin;
 
@@ -6885,20 +6853,15 @@ export const fakePin = async (req, res) => {
     // vote doesn't consume user's pending activity.
     // =====================================================
 
-    let validation =
-      await Validation.findOne({
-        pinID: pinId,
-      }).session(session);
+    let validation = await Validation.findOne({
+      pinID: pinId,
+    }).session(session);
 
     // =====================================================
     // 14. VALIDATION EXPIRY
     // =====================================================
 
-    if (
-      validation?.expiresAt &&
-      new Date() >
-        new Date(validation.expiresAt)
-    ) {
+    if (validation?.expiresAt && new Date() > new Date(validation.expiresAt)) {
       await session.abortTransaction();
 
       return res.status(400).json({
@@ -6918,20 +6881,16 @@ export const fakePin = async (req, res) => {
     // =====================================================
 
     if (validation) {
-      const alreadyVoted =
-        validation.votes?.some(
-          (vote) =>
-            vote.userId?.toString() ===
-            userId.toString(),
-        );
+      const alreadyVoted = validation.votes?.some(
+        (vote) => vote.userId?.toString() === userId.toString(),
+      );
 
       if (alreadyVoted) {
         await session.abortTransaction();
 
         return res.status(400).json({
           success: false,
-          message:
-            "You already voted on this pin",
+          message: "You already voted on this pin",
         });
       }
 
@@ -6939,33 +6898,25 @@ export const fakePin = async (req, res) => {
       // Backward compatibility
       // -----------------------------------------------
 
-      if (
-        validation.validatedBy?.toString() ===
-        userId.toString()
-      ) {
+      if (validation.validatedBy?.toString() === userId.toString()) {
         await session.abortTransaction();
 
         return res.status(400).json({
           success: false,
-          message:
-            "You already voted on this pin",
+          message: "You already voted on this pin",
         });
       }
 
-      const alreadyBeneficiary =
-        validation.beneficiaries?.some(
-          (id) =>
-            id.toString() ===
-            userId.toString(),
-        );
+      const alreadyBeneficiary = validation.beneficiaries?.some(
+        (id) => id.toString() === userId.toString(),
+      );
 
       if (alreadyBeneficiary) {
         await session.abortTransaction();
 
         return res.status(400).json({
           success: false,
-          message:
-            "You already voted on this pin",
+          message: "You already voted on this pin",
         });
       }
     }
@@ -6974,20 +6925,16 @@ export const fakePin = async (req, res) => {
     // 16. OLD FAKE REPORT DUPLICATE CHECK
     // =====================================================
 
-    const alreadyReported =
-      pin.fakereportingBy?.some(
-        (id) =>
-          id.toString() ===
-          userId.toString(),
-      );
+    const alreadyReported = pin.fakereportingBy?.some(
+      (id) => id.toString() === userId.toString(),
+    );
 
     if (alreadyReported) {
       await session.abortTransaction();
 
       return res.status(400).json({
         success: false,
-        message:
-          "You already reported this pin",
+        message: "You already reported this pin",
       });
     }
 
@@ -7007,29 +6954,21 @@ export const fakePin = async (req, res) => {
     // 18. TRAVEL DISTANCE
     // =====================================================
 
-    const travelDistance = Number(
-      activity?.distance || 0,
-    );
+    const travelDistance = Number(activity?.distance || 0);
 
     // =====================================================
     // 19. TRAVEL XP
     // =====================================================
 
-    const baseTravelXP = Math.max(
-      1,
-      Math.floor(travelDistance / 100),
-    );
+    const baseTravelXP = Math.max(1, Math.floor(travelDistance / 100));
 
-    const travelXP =
-      calculateXPWithBoosts({
-        baseXP: baseTravelXP,
+    const travelXP = calculateXPWithBoosts({
+      baseXP: baseTravelXP,
 
-        doubleXP:
-          activeBoosts.Double_XP,
+      doubleXP: activeBoosts.Double_XP,
 
-        hexParty:
-          hexPartyActive,
-      });
+      hexParty: hexPartyActive,
+    });
 
     // =====================================================
     // 20. 5 CREDITS PER MILE
@@ -7037,67 +6976,43 @@ export const fakePin = async (req, res) => {
 
     const METERS_PER_MILE = 1609.344;
 
-    const milesTravelled =
-      travelDistance / METERS_PER_MILE;
+    const milesTravelled = travelDistance / METERS_PER_MILE;
 
-    const creditsEarned = Number(
-      (milesTravelled * 5).toFixed(2),
-    );
+    const creditsEarned = Number((milesTravelled * 5).toFixed(2));
 
     // =====================================================
     // 21. GET WEIGHT
     // =====================================================
 
-    const voteWeight =
-      getValidationWeight(user);
+    const voteWeight = getValidationWeight(user);
 
     // =====================================================
     // 22. CREATE FAKE VOTE SNAPSHOT
     // =====================================================
 
     const fakeVote = {
-      userId:
-        user._id,
+      userId: user._id,
 
-      vote:
-        "FAKE",
+      vote: "FAKE",
 
-      weight:
-        voteWeight,
+      weight: voteWeight,
 
       // Snapshot before reward
-      trustScore:
-        Number(
-          user.trustScore || 0,
-        ),
+      trustScore: Number(user.trustScore || 0),
 
-      level:
-        Number(
-          user.level || 1,
-        ),
+      level: Number(user.level || 1),
 
-      levelName:
-        user.levelName || null,
+      levelName: user.levelName || null,
 
       location: {
-        latitude:
-          Number(
-            currentLatitude,
-          ),
+        latitude: Number(currentLatitude),
 
-        longitude:
-          Number(
-            currentLongitude,
-          ),
+        longitude: Number(currentLongitude),
       },
 
-      distanceMeters:
-        Number(
-          liveDistance,
-        ),
+      distanceMeters: Number(liveDistance),
 
-      xpEarned:
-        travelXP,
+      xpEarned: travelXP,
 
       creditsEarned,
     };
@@ -7108,49 +7023,32 @@ export const fakePin = async (req, res) => {
 
     if (!validation) {
       validation = new Validation({
-        pinID:
-          pinId,
+        pinID: pinId,
 
-        beneficiaries:
-          [],
+        beneficiaries: [],
 
-        status:
-          "orange",
+        status: "orange",
 
-        votes: [
-          fakeVote,
-        ],
+        votes: [fakeVote],
 
-        validWeight:
-          0,
+        validWeight: 0,
 
-        fakeWeight:
-          voteWeight,
+        fakeWeight: voteWeight,
 
-        validVotes:
-          0,
+        validVotes: 0,
 
-        fakeVotes:
-          1,
+        fakeVotes: 1,
 
-        confidenceScore:
-          -voteWeight,
+        confidenceScore: -voteWeight,
 
-        consensusStatus:
-          "PENDING",
+        consensusStatus: "PENDING",
       });
     } else {
-      if (
-        !Array.isArray(
-          validation.votes,
-        )
-      ) {
+      if (!Array.isArray(validation.votes)) {
         validation.votes = [];
       }
 
-      validation.votes.push(
-        fakeVote,
-      );
+      validation.votes.push(fakeVote);
     }
 
     // =====================================================
@@ -7161,51 +7059,29 @@ export const fakePin = async (req, res) => {
       pin.fakereportingBy = [];
     }
 
-    pin.fakereportingBy.push(
-      userId,
-    );
+    pin.fakereportingBy.push(userId);
 
     // =====================================================
     // 25. RECALCULATE CONSENSUS
     // =====================================================
 
-    const validVotes =
-      validation.votes.filter(
-        (vote) =>
-          vote.vote === "VALID",
-      );
+    const validVotes = validation.votes.filter((vote) => vote.vote === "VALID");
 
-    const fakeVotes =
-      validation.votes.filter(
-        (vote) =>
-          vote.vote === "FAKE",
-      );
+    const fakeVotes = validation.votes.filter((vote) => vote.vote === "FAKE");
 
-    validation.validWeight =
-      validVotes.reduce(
-        (total, vote) =>
-          total +
-          Number(
-            vote.weight || 0,
-          ),
-        0,
-      );
+    validation.validWeight = validVotes.reduce(
+      (total, vote) => total + Number(vote.weight || 0),
+      0,
+    );
 
-    validation.fakeWeight =
-      fakeVotes.reduce(
-        (total, vote) =>
-          total +
-          Number(
-            vote.weight || 0,
-          ),
-        0,
-      );
+    validation.fakeWeight = fakeVotes.reduce(
+      (total, vote) => total + Number(vote.weight || 0),
+      0,
+    );
 
-    validation.validVotes =
-      validVotes.length;
+    validation.validVotes = validVotes.length;
 
-    validation.fakeVotes =
-      fakeVotes.length;
+    validation.fakeVotes = fakeVotes.length;
 
     // =====================================================
     // 26. FINAL SCORE
@@ -7213,24 +7089,19 @@ export const fakePin = async (req, res) => {
     // VALID weight - FAKE weight
     // =====================================================
 
-    validation.confidenceScore =
-      validation.validWeight -
-      validation.fakeWeight;
+    validation.confidenceScore = validation.validWeight - validation.fakeWeight;
 
     // =====================================================
     // 27. PIN SCORE IS ONLY CACHE
     // =====================================================
 
-    pin.pinScore =
-      validation.confidenceScore;
+    pin.pinScore = validation.confidenceScore;
 
     // =====================================================
     // 28. MODE
     // =====================================================
 
-    const isVanguard =
-      pin.activePinMode ===
-      "vanguard";
+    const isVanguard = pin.activePinMode === "vanguard";
 
     let pinDeleted = false;
     let becameFake = false;
@@ -7239,10 +7110,9 @@ export const fakePin = async (req, res) => {
     // 29. FIND CREATOR
     // =====================================================
 
-    const creatorForNotification =
-      await User.findById(
-        pin.createdBy,
-      ).session(session);
+    const creatorForNotification = await User.findById(pin.createdBy).session(
+      session,
+    );
 
     // =====================================================
     // 30. VANGUARD MODE
@@ -7252,51 +7122,31 @@ export const fakePin = async (req, res) => {
     // =====================================================
 
     if (isVanguard) {
-      pin.vanguardFakeReports =
-        validation.fakeVotes;
+      pin.vanguardFakeReports = validation.fakeVotes;
 
-      if (
-        validation.fakeVotes >= 3
-      ) {
-        validation.consensusStatus =
-          "FAKE";
+      if (validation.fakeVotes >= 3) {
+        validation.consensusStatus = "FAKE";
 
-        validation.consensusReachedAt =
-          new Date();
+        validation.consensusReachedAt = new Date();
 
-        becameFake =
-          true;
+        becameFake = true;
 
         // =================================================
         // CREATOR PENALTY ONLY ONCE
         // =================================================
 
-        if (
-          !pin.creatorPenalized &&
-          creatorForNotification
-        ) {
-          const creator =
-            creatorForNotification;
+        if (!pin.creatorPenalized && creatorForNotification) {
+          const creator = creatorForNotification;
 
           const penalty = Number(
-            VALIDATION_CONFIG
-              .FAKE_CREATOR_TRUST_PENALTY ??
-              15,
+            VALIDATION_CONFIG.FAKE_CREATOR_TRUST_PENALTY ?? 15,
           );
 
-          creator.trustScore =
-            Math.max(
-              0,
+          creator.trustScore = Math.max(
+            0,
 
-              Number(
-                (
-                  Number(
-                    creator.trustScore ||
-                      0,
-                  ) - penalty
-                ).toFixed(1),
-              ),
-            );
+            Number((Number(creator.trustScore || 0) - penalty).toFixed(1)),
+          );
 
           // ---------------------------------------------
           // Ban / ShadowBan threshold
@@ -7304,11 +7154,7 @@ export const fakePin = async (req, res) => {
 
           if (
             creator.trustScore <
-            Number(
-              VALIDATION_CONFIG
-                .SHADOWBAN_TRUST_THRESHOLD ??
-                40,
-            )
+            Number(VALIDATION_CONFIG.SHADOWBAN_TRUST_THRESHOLD ?? 40)
           ) {
             /*
              * If you add:
@@ -7318,42 +7164,30 @@ export const fakePin = async (req, res) => {
              * use that instead.
              */
 
-            creator.status =
-              "banned";
+            creator.status = "banned";
           }
 
           // ---------------------------------------------
           // Remove instant Vanguard XP
           // ---------------------------------------------
 
-          const instantXP =
-            Number(
-              pin.xpScore || 0,
-            );
+          const instantXP = Number(pin.xpScore || 0);
 
-          creator.xp =
-            Math.max(
-              0,
+          creator.xp = Math.max(
+            0,
 
-              Number(
-                creator.xp || 0,
-              ) - instantXP,
-            );
+            Number(creator.xp || 0) - instantXP,
+          );
 
           // ---------------------------------------------
           // Recalculate creator level
           // ---------------------------------------------
 
-          const creatorLevelData =
-            getLevelData(
-              creator.xp,
-            );
+          const creatorLevelData = getLevelData(creator.xp);
 
-          creator.level =
-            creatorLevelData.level;
+          creator.level = creatorLevelData.level;
 
-          creator.levelName =
-            creatorLevelData.name;
+          creator.levelName = creatorLevelData.name;
 
           await creator.save({
             session,
@@ -7366,14 +7200,11 @@ export const fakePin = async (req, res) => {
           await Fine.create(
             [
               {
-                userId:
-                  creator._id,
+                userId: creator._id,
 
-                amount:
-                  penalty,
+                amount: penalty,
 
-                reason:
-                  `Vanguard pin ${pin._id} deleted after 3 fake votes`,
+                reason: `Vanguard pin ${pin._id} deleted after 3 fake votes`,
               },
             ],
             {
@@ -7381,8 +7212,7 @@ export const fakePin = async (req, res) => {
             },
           );
 
-          pin.creatorPenalized =
-            true;
+          pin.creatorPenalized = true;
         }
       }
     } else {
@@ -7390,36 +7220,71 @@ export const fakePin = async (req, res) => {
       // 31. NORMAL MODE WEIGHTED FAKE CONSENSUS
       // ===================================================
 
-      if (
-        validation.confidenceScore <=
-          VALIDATION_CONFIG.FAKE_SCORE &&
-        validation.consensusStatus !==
-          "FAKE"
-      ) {
-        validation.consensusStatus =
-          "FAKE";
+      // if (
+      //   validation.confidenceScore <=
+      //     VALIDATION_CONFIG.FAKE_SCORE &&
+      //   validation.consensusStatus !==
+      //     "FAKE"
+      // ) {
+      //   validation.consensusStatus =
+      //     "FAKE";
 
-        validation.consensusReachedAt =
-          new Date();
+      //   validation.consensusReachedAt =
+      //     new Date();
 
+      //   /*
+      //    * Your Validation.status currently supports
+      //    * red/orange/green.
+      //    *
+      //    * So actual fake state is:
+      //    *
+      //    * consensusStatus = FAKE
+      //    * pin.pinStatus = fake
+      //    */
+
+      //   validation.status =
+      //     "orange";
+
+      //   pin.pinStatus =
+      //     "fake";
+
+      //   becameFake =
+      //     true;
+      // }
+
+      // =====================================================
+      // DELETE / SAVE PIN
+      // =====================================================
+
+      const shouldDeleteVanguardPin = isVanguard && validation.fakeVotes >= 3;
+
+      const shouldDeleteNormalFakePin =
+        !isVanguard &&
+        validation.consensusStatus === "FAKE" &&
+        validation.confidenceScore <= VALIDATION_CONFIG.FAKE_SCORE;
+
+      // =====================================================
+      // DELETE PIN
+      // =====================================================
+
+      if (shouldDeleteVanguardPin || shouldDeleteNormalFakePin) {
         /*
-         * Your Validation.status currently supports
-         * red/orange/green.
-         *
-         * So actual fake state is:
-         *
-         * consensusStatus = FAKE
-         * pin.pinStatus = fake
+         * Save Validation first so voting/audit history
+         * remains available.
          */
+        await validation.save({
+          session,
+        });
 
-        validation.status =
-          "orange";
+        await Pin.findByIdAndDelete(pin._id, {
+          session,
+        });
 
-        pin.pinStatus =
-          "fake";
-
-        becameFake =
-          true;
+        pinDeleted = true;
+      } else {
+        await pin.save({
+          session,
+        });
       }
 
       // ===================================================
@@ -7427,44 +7292,27 @@ export const fakePin = async (req, res) => {
       // ===================================================
 
       if (
-        validation.consensusStatus ===
-          "FAKE" &&
+        validation.consensusStatus === "FAKE" &&
         !pin.creatorPenalized &&
         creatorForNotification
       ) {
-        const creator =
-          creatorForNotification;
+        const creator = creatorForNotification;
 
         const penalty = Number(
-          VALIDATION_CONFIG
-            .FAKE_CREATOR_TRUST_PENALTY ??
-            15,
+          VALIDATION_CONFIG.FAKE_CREATOR_TRUST_PENALTY ?? 15,
         );
 
-        creator.trustScore =
-          Math.max(
-            0,
+        creator.trustScore = Math.max(
+          0,
 
-            Number(
-              (
-                Number(
-                  creator.trustScore ||
-                    0,
-                ) - penalty
-              ).toFixed(1),
-            ),
-          );
+          Number((Number(creator.trustScore || 0) - penalty).toFixed(1)),
+        );
 
         if (
           creator.trustScore <
-          Number(
-            VALIDATION_CONFIG
-              .SHADOWBAN_TRUST_THRESHOLD ??
-              40,
-          )
+          Number(VALIDATION_CONFIG.SHADOWBAN_TRUST_THRESHOLD ?? 40)
         ) {
-          creator.status =
-            "banned";
+          creator.status = "banned";
         }
 
         await creator.save({
@@ -7474,14 +7322,11 @@ export const fakePin = async (req, res) => {
         await Fine.create(
           [
             {
-              userId:
-                creator._id,
+              userId: creator._id,
 
-              amount:
-                penalty,
+              amount: penalty,
 
-              reason:
-                `Pin ${pin._id} reached weighted fake consensus`,
+              reason: `Pin ${pin._id} reached weighted fake consensus`,
             },
           ],
           {
@@ -7489,8 +7334,7 @@ export const fakePin = async (req, res) => {
           },
         );
 
-        pin.creatorPenalized =
-          true;
+        pin.creatorPenalized = true;
       }
     }
 
@@ -7498,145 +7342,81 @@ export const fakePin = async (req, res) => {
     // 33. REPORTER REWARD
     // =====================================================
 
-    const oldLevel =
-      Number(
-        user.level || 1,
-      );
+    const oldLevel = Number(user.level || 1);
 
-    const updatedXP =
-      Number(
-        user.xp || 0,
-      ) +
-      Number(
-        travelXP || 0,
-      );
+    const updatedXP = Number(user.xp || 0) + Number(travelXP || 0);
 
     // Keep existing helper
-    await checkLevelUp(
-      user,
-      updatedXP,
-      session,
-    );
+    await checkLevelUp(user, updatedXP, session);
 
     // =====================================================
     // 34. ADD XP
     // =====================================================
 
-    user.xp =
-      updatedXP;
+    user.xp = updatedXP;
 
     // =====================================================
     // 35. 5 CREDITS PER MILE
     // =====================================================
 
-    user.credits =
-      Number(
-        user.credits || 0,
-      ) +
-      Number(
-        creditsEarned || 0,
-      );
+    user.credits = Number(user.credits || 0) + Number(creditsEarned || 0);
 
     // =====================================================
     // 36. LEADERBOARD
     // =====================================================
 
-    await updateLeaderboardXP(
-      user._id,
-      travelXP,
-      session,
-    );
+    await updateLeaderboardXP(user._id, travelXP, session);
 
     // =====================================================
     // 37. TRUST SCORE
     // =====================================================
 
-    user.trustScore =
-      Math.min(
-        99.9,
+    user.trustScore = Math.min(
+      99.9,
 
-        Number(
-          (
-            Number(
-              user.trustScore || 0,
-            ) + 0.1
-          ).toFixed(1),
-        ),
-      );
+      Number((Number(user.trustScore || 0) + 0.1).toFixed(1)),
+    );
 
     // =====================================================
     // 38. RECALCULATE REPORTER LEVEL
     // =====================================================
 
-    const levelData =
-      getLevelData(
-        user.xp,
-      );
+    const levelData = getLevelData(user.xp);
 
-    user.level =
-      levelData.level;
+    user.level = levelData.level;
 
-    user.levelName =
-      levelData.name;
+    user.levelName = levelData.name;
 
     // =====================================================
     // 39. LEVEL-UP NOTIFICATION
     // =====================================================
 
-    let levelUpNotification =
-      null;
+    let levelUpNotification = null;
 
-    if (
-      Number(
-        levelData.level,
-      ) > oldLevel
-    ) {
-      const levelMessage =
-        getLevelUpNotification({
-          level:
-            levelData.level,
+    if (Number(levelData.level) > oldLevel) {
+      const levelMessage = getLevelUpNotification({
+        level: levelData.level,
 
-          levelName:
-            levelData.name,
+        levelName: levelData.name,
 
-          emoji:
-            levelData.emoji || "",
-        });
+        emoji: levelData.emoji || "",
+      });
 
       levelUpNotification = {
-        tokens:
-          user.fcmToken
-            ? [
-                user.fcmToken,
-              ]
-            : [],
+        tokens: user.fcmToken ? [user.fcmToken] : [],
 
-        title:
-          levelMessage.title,
+        title: levelMessage.title,
 
-        body:
-          levelMessage.body,
+        body: levelMessage.body,
 
         data: {
-          type:
-            "LEVEL_UP",
+          type: "LEVEL_UP",
 
-          level:
-            String(
-              levelData.level,
-            ),
+          level: String(levelData.level),
 
-          levelName:
-            String(
-              levelData.name ||
-                "",
-            ),
+          levelName: String(levelData.name || ""),
 
-          emoji:
-            String(
-              levelData.emoji ||
-                "",
-            ),
+          emoji: String(levelData.emoji || ""),
         },
       };
 
@@ -7647,21 +7427,15 @@ export const fakePin = async (req, res) => {
       await Notification.create(
         [
           {
-            title:
-              levelMessage.title,
+            title: levelMessage.title,
 
-            description:
-              levelMessage.body,
+            description: levelMessage.body,
 
-            notificationType:
-              "private",
+            notificationType: "private",
 
-            receivers: [
-              user._id,
-            ],
+            receivers: [user._id],
 
-            senderRole:
-              "system",
+            senderRole: "system",
           },
         ],
         {
@@ -7682,15 +7456,13 @@ export const fakePin = async (req, res) => {
     // 41. USER STATS
     // =====================================================
 
-    let userStats =
-      await States.findOne({
-        user: userId,
-      }).session(session);
+    let userStats = await States.findOne({
+      user: userId,
+    }).session(session);
 
     if (!userStats) {
       userStats = new States({
-        user:
-          userId,
+        user: userId,
 
         /*
          * If you have pinsReportedFake in your
@@ -7699,15 +7471,10 @@ export const fakePin = async (req, res) => {
          * Otherwise remove this field.
          */
 
-        pinsReportedFake:
-          1,
+        pinsReportedFake: 1,
       });
     } else {
-      userStats.pinsReportedFake =
-        Number(
-          userStats.pinsReportedFake ||
-            0,
-        ) + 1;
+      userStats.pinsReportedFake = Number(userStats.pinsReportedFake || 0) + 1;
     }
 
     await userStats.save({
@@ -7729,24 +7496,17 @@ export const fakePin = async (req, res) => {
     // 43. SAVE OR DELETE PIN
     // =====================================================
 
-    if (
-      isVanguard &&
-      validation.fakeVotes >= 3
-    ) {
+    if (isVanguard && validation.fakeVotes >= 3) {
       /*
        * Validation has already been saved above.
        * So fake-vote history remains available.
        */
 
-      await Pin.findByIdAndDelete(
-        pin._id,
-        {
-          session,
-        },
-      );
+      await Pin.findByIdAndDelete(pin._id, {
+        session,
+      });
 
-      pinDeleted =
-        true;
+      pinDeleted = true;
     } else {
       await pin.save({
         session,
@@ -7760,8 +7520,7 @@ export const fakePin = async (req, res) => {
     await Activity.create(
       [
         {
-          userId:
-            userId,
+          userId: userId,
 
           /*
            * If your Activity schema has
@@ -7770,21 +7529,15 @@ export const fakePin = async (req, res) => {
            * Otherwise keep pin_validated.
            */
 
-          activityType:
-            "pin_validated",
+          activityType: "pin_validated",
 
-          pinId:
-            pin._id,
+          pinId: pin._id,
 
-          pinTitle:
-            pin.description ||
-            "Fake Pin Report",
+          pinTitle: pin.description || "Fake Pin Report",
 
-          images:
-            pin.images || [],
+          images: pin.images || [],
 
-          xpEarned:
-            travelXP,
+          xpEarned: travelXP,
 
           /*
            * User earned credits.
@@ -7794,42 +7547,29 @@ export const fakePin = async (req, res) => {
            * if you want this persisted.
            */
 
-          creditsSpent:
-            0,
+          creditsSpent: 0,
 
-          distance:
-            travelDistance,
+          distance: travelDistance,
 
           activityLocation: {
-            latitude:
-              pinLatitude,
+            latitude: pinLatitude,
 
-            longitude:
-              pinLongitude,
+            longitude: pinLongitude,
           },
 
           startLocation: {
-            latitude:
-              Number(
-                currentLatitude,
-              ),
+            latitude: Number(currentLatitude),
 
-            longitude:
-              Number(
-                currentLongitude,
-              ),
+            longitude: Number(currentLongitude),
           },
 
           endLocation: {
-            latitude:
-              pinLatitude,
+            latitude: pinLatitude,
 
-            longitude:
-              pinLongitude,
+            longitude: pinLongitude,
           },
 
-          status:
-            "completed",
+          status: "completed",
         },
       ],
       {
@@ -7842,54 +7582,28 @@ export const fakePin = async (req, res) => {
     // =====================================================
 
     const reporterNotification = {
-      tokens:
-        user.fcmToken
-          ? [
-              user.fcmToken,
-            ]
-          : [],
+      tokens: user.fcmToken ? [user.fcmToken] : [],
 
-      title:
-        "🚩 Fake Report Submitted",
+      title: "🚩 Fake Report Submitted",
 
       body:
-        `You travelled ${milesTravelled.toFixed(
-          2,
-        )} miles and earned ` +
+        `You travelled ${milesTravelled.toFixed(2)} miles and earned ` +
         `${travelXP} XP and ${creditsEarned} Credits.`,
 
       data: {
-        type:
-          "PIN_REPORTED_FAKE",
+        type: "PIN_REPORTED_FAKE",
 
-        pinId:
-          pin._id.toString(),
+        pinId: pin._id.toString(),
 
-        xp:
-          String(
-            travelXP,
-          ),
+        xp: String(travelXP),
 
-        credits:
-          String(
-            creditsEarned,
-          ),
+        credits: String(creditsEarned),
 
-        voteWeight:
-          String(
-            voteWeight,
-          ),
+        voteWeight: String(voteWeight),
 
-        confidenceScore:
-          String(
-            validation.confidenceScore,
-          ),
+        confidenceScore: String(validation.confidenceScore),
 
-        mode:
-          String(
-            pin.activePinMode ||
-              "",
-          ),
+        mode: String(pin.activePinMode || ""),
       },
     };
 
@@ -7900,21 +7614,15 @@ export const fakePin = async (req, res) => {
     await Notification.create(
       [
         {
-          title:
-            reporterNotification.title,
+          title: reporterNotification.title,
 
-          description:
-            reporterNotification.body,
+          description: reporterNotification.body,
 
-          notificationType:
-            "private",
+          notificationType: "private",
 
-          receivers: [
-            user._id,
-          ],
+          receivers: [user._id],
 
-          senderRole:
-            "system",
+          senderRole: "system",
         },
       ],
       {
@@ -7926,52 +7634,33 @@ export const fakePin = async (req, res) => {
     // 47. CREATOR NOTIFICATION
     // =====================================================
 
-    let creatorNotification =
-      null;
+    let creatorNotification = null;
 
-    if (
-      creatorForNotification
-    ) {
+    if (creatorForNotification) {
       // -----------------------------------------------
       // Vanguard deleted
       // -----------------------------------------------
 
       if (pinDeleted) {
         creatorNotification = {
-          tokens:
-            creatorForNotification
-              .fcmToken
-              ? [
-                  creatorForNotification
-                    .fcmToken,
-                ]
-              : [],
+          tokens: creatorForNotification.fcmToken
+            ? [creatorForNotification.fcmToken]
+            : [],
 
-          title:
-            "🚨 Vanguard Pin Deleted",
+          title: "🚨 Vanguard Pin Deleted",
 
-          body:
-            "Your Vanguard pin was deleted after receiving 3 fake votes.",
+          body: "Your Vanguard pin was deleted after receiving 3 fake votes.",
 
           data: {
-            type:
-              "VANGUARD_PIN_DELETED",
+            type: "VANGUARD_PIN_DELETED",
 
-            pinId:
-              pin._id.toString(),
+            pinId: pin._id.toString(),
 
-            reason:
-              "THREE_FAKE_VOTES",
+            reason: "THREE_FAKE_VOTES",
 
-            fakeVotes:
-              String(
-                validation.fakeVotes,
-              ),
+            fakeVotes: String(validation.fakeVotes),
 
-            fakeWeight:
-              String(
-                validation.fakeWeight,
-              ),
+            fakeWeight: String(validation.fakeWeight),
           },
         };
       }
@@ -7979,48 +7668,26 @@ export const fakePin = async (req, res) => {
       // -----------------------------------------------
       // Normal pin became fake
       // -----------------------------------------------
-
-      else if (
-        validation.consensusStatus ===
-        "FAKE"
-      ) {
+      else if (validation.consensusStatus === "FAKE") {
         creatorNotification = {
-          tokens:
-            creatorForNotification
-              .fcmToken
-              ? [
-                  creatorForNotification
-                    .fcmToken,
-                ]
-              : [],
+          tokens: creatorForNotification.fcmToken
+            ? [creatorForNotification.fcmToken]
+            : [],
 
-          title:
-            "🚨 Pin Marked Fake",
+          title: "🚨 Pin Marked Fake",
 
-          body:
-            "Your pin reached the fake validation threshold.",
+          body: "Your pin reached the fake validation threshold.",
 
           data: {
-            type:
-              "PIN_MARKED_FAKE",
+            type: "PIN_MARKED_FAKE",
 
-            pinId:
-              pin._id.toString(),
+            pinId: pin._id.toString(),
 
-            fakeVotes:
-              String(
-                validation.fakeVotes,
-              ),
+            fakeVotes: String(validation.fakeVotes),
 
-            fakeWeight:
-              String(
-                validation.fakeWeight,
-              ),
+            fakeWeight: String(validation.fakeWeight),
 
-            confidenceScore:
-              String(
-                validation.confidenceScore,
-              ),
+            confidenceScore: String(validation.confidenceScore),
           },
         };
       }
@@ -8028,74 +7695,37 @@ export const fakePin = async (req, res) => {
       // -----------------------------------------------
       // Still pending
       // -----------------------------------------------
-
       else {
-        const remainingReports =
-          isVanguard
-            ? Math.max(
-                0,
-                3 -
-                  Number(
-                    validation.fakeVotes ||
-                      0,
-                  ),
-              )
-            : null;
+        const remainingReports = isVanguard
+          ? Math.max(0, 3 - Number(validation.fakeVotes || 0))
+          : null;
 
         creatorNotification = {
-          tokens:
-            creatorForNotification
-              .fcmToken
-              ? [
-                  creatorForNotification
-                    .fcmToken,
-                ]
-              : [],
+          tokens: creatorForNotification.fcmToken
+            ? [creatorForNotification.fcmToken]
+            : [],
 
-          title:
-            isVanguard
-              ? "🚩 Vanguard Pin Reported"
-              : "🚩 Pin Reported",
+          title: isVanguard ? "🚩 Vanguard Pin Reported" : "🚩 Pin Reported",
 
-          body:
-            isVanguard
-              ? `Your Vanguard pin received a fake vote. ${remainingReports} fake vote(s) remaining before deletion.`
-              : `${user.name} reported your pin as fake.`,
+          body: isVanguard
+            ? `Your Vanguard pin received a fake vote. ${remainingReports} fake vote(s) remaining before deletion.`
+            : `${user.name} reported your pin as fake.`,
 
           data: {
-            type:
-              isVanguard
-                ? "VANGUARD_PIN_REPORTED"
-                : "PIN_REPORTED_BY_USER",
+            type: isVanguard ? "VANGUARD_PIN_REPORTED" : "PIN_REPORTED_BY_USER",
 
-            pinId:
-              pin._id.toString(),
+            pinId: pin._id.toString(),
 
-            reportedBy:
-              user._id.toString(),
+            reportedBy: user._id.toString(),
 
-            fakeVotes:
-              String(
-                validation.fakeVotes,
-              ),
+            fakeVotes: String(validation.fakeVotes),
 
-            fakeWeight:
-              String(
-                validation.fakeWeight,
-              ),
+            fakeWeight: String(validation.fakeWeight),
 
-            confidenceScore:
-              String(
-                validation.confidenceScore,
-              ),
+            confidenceScore: String(validation.confidenceScore),
 
             remainingReports:
-              remainingReports !==
-              null
-                ? String(
-                    remainingReports,
-                  )
-                : "",
+              remainingReports !== null ? String(remainingReports) : "",
           },
         };
       }
@@ -8105,29 +7735,19 @@ export const fakePin = async (req, res) => {
     // 48. STORE CREATOR NOTIFICATION
     // =====================================================
 
-    if (
-      creatorNotification &&
-      creatorForNotification
-    ) {
+    if (creatorNotification && creatorForNotification) {
       await Notification.create(
         [
           {
-            title:
-              creatorNotification.title,
+            title: creatorNotification.title,
 
-            description:
-              creatorNotification.body,
+            description: creatorNotification.body,
 
-            notificationType:
-              "private",
+            notificationType: "private",
 
-            receivers: [
-              creatorForNotification
-                ._id,
-            ],
+            receivers: [creatorForNotification._id],
 
-            senderRole:
-              "system",
+            senderRole: "system",
           },
         ],
         {
@@ -8149,39 +7769,18 @@ export const fakePin = async (req, res) => {
     const notifications = [];
 
     // Fake report reward
-    if (
-      reporterNotification
-        ?.tokens?.length
-    ) {
-      notifications.push(
-        sendNotification(
-          reporterNotification,
-        ),
-      );
+    if (reporterNotification?.tokens?.length) {
+      notifications.push(sendNotification(reporterNotification));
     }
 
     // Creator
-    if (
-      creatorNotification
-        ?.tokens?.length
-    ) {
-      notifications.push(
-        sendNotification(
-          creatorNotification,
-        ),
-      );
+    if (creatorNotification?.tokens?.length) {
+      notifications.push(sendNotification(creatorNotification));
     }
 
     // Level up
-    if (
-      levelUpNotification
-        ?.tokens?.length
-    ) {
-      notifications.push(
-        sendNotification(
-          levelUpNotification,
-        ),
-      );
+    if (levelUpNotification?.tokens?.length) {
+      notifications.push(sendNotification(levelUpNotification));
     }
 
     /*
@@ -8189,9 +7788,7 @@ export const fakePin = async (req, res) => {
      * FCM failure should not fail this API.
      */
 
-    await Promise.allSettled(
-      notifications,
-    );
+    await Promise.allSettled(notifications);
 
     // =====================================================
     // 51. RESPONSE
@@ -8200,181 +7797,114 @@ export const fakePin = async (req, res) => {
     return res.status(200).json({
       success: true,
 
-      message:
-        pinDeleted
-          ? "Pin deleted after 3 fake votes (Vanguard mode)"
-          : becameFake
-            ? "Pin marked as fake"
-            : "Fake vote submitted successfully",
+      message: pinDeleted
+        ? "Pin deleted after 3 fake votes (Vanguard mode)"
+        : becameFake
+          ? "Pin marked as fake"
+          : "Fake vote submitted successfully",
 
-      mode:
-        pin.activePinMode,
+      mode: pin.activePinMode,
 
       vote: {
-        userId:
-          user._id,
+        userId: user._id,
 
-        type:
-          "FAKE",
+        type: "FAKE",
 
-        weight:
-          voteWeight,
+        weight: voteWeight,
 
-        trustScore:
-          user.trustScore,
+        trustScore: user.trustScore,
 
-        level:
-          user.level,
+        level: user.level,
 
-        levelName:
-          user.levelName,
+        levelName: user.levelName,
       },
 
       consensus: {
-        validWeight:
-          validation.validWeight,
+        validWeight: validation.validWeight,
 
-        fakeWeight:
-          validation.fakeWeight,
+        fakeWeight: validation.fakeWeight,
 
-        validVotes:
-          validation.validVotes,
+        validVotes: validation.validVotes,
 
-        fakeVotes:
-          validation.fakeVotes,
+        fakeVotes: validation.fakeVotes,
 
-        confidenceScore:
-          validation.confidenceScore,
+        confidenceScore: validation.confidenceScore,
 
-        verifiedThreshold:
-          VALIDATION_CONFIG
-            .VERIFIED_SCORE,
+        verifiedThreshold: VALIDATION_CONFIG.VERIFIED_SCORE,
 
-        fakeThreshold:
-          VALIDATION_CONFIG
-            .FAKE_SCORE,
+        fakeThreshold: VALIDATION_CONFIG.FAKE_SCORE,
 
-        status:
-          validation.consensusStatus,
+        status: validation.consensusStatus,
       },
 
       rewards: {
-        distanceMeters:
-          travelDistance,
+        distanceMeters: travelDistance,
 
-        milesTravelled:
-          Number(
-            milesTravelled.toFixed(
-              2,
-            ),
-          ),
+        milesTravelled: Number(milesTravelled.toFixed(2)),
 
-        baseXP:
-          baseTravelXP,
+        baseXP: baseTravelXP,
 
-        xpEarned:
-          travelXP,
+        xpEarned: travelXP,
 
         creditsEarned,
 
-        creditRate:
-          "5 credits per mile",
+        creditRate: "5 credits per mile",
 
-        trustScoreEarned:
-          0.1,
+        trustScoreEarned: 0.1,
       },
 
       levelUp:
-        Number(
-          user.level,
-        ) > oldLevel
+        Number(user.level) > oldLevel
           ? {
-              previousLevel:
-                oldLevel,
+              previousLevel: oldLevel,
 
-              newLevel:
-                user.level,
+              newLevel: user.level,
 
-              levelName:
-                user.levelName,
+              levelName: user.levelName,
 
-              emoji:
-                levelData.emoji ||
-                "",
+              emoji: levelData.emoji || "",
             }
           : null,
 
       pinData: {
-        pinScore:
-          validation.confidenceScore,
+        pinScore: validation.confidenceScore,
 
-        pinStatus:
-          pinDeleted
-            ? "deleted"
-            : pin.pinStatus,
+        pinStatus: pinDeleted ? "deleted" : pin.pinStatus,
 
-        vanguardFakeReports:
-          isVanguard
-            ? validation.fakeVotes
-            : pin.vanguardFakeReports,
+        vanguardFakeReports: isVanguard
+          ? validation.fakeVotes
+          : pin.vanguardFakeReports,
 
-        activePinMode:
-          pin.activePinMode,
+        activePinMode: pin.activePinMode,
 
-        deleted:
-          pinDeleted,
+        deleted: pinDeleted,
       },
 
       distanceInfo: {
-        liveDistanceMeters:
-          Number(
-            liveDistance.toFixed(
-              2,
-            ),
-          ),
+        liveDistanceMeters: Number(liveDistance.toFixed(2)),
 
-        travelDistanceMeters:
-          Number(
-            travelDistance.toFixed(
-              2,
-            ),
-          ),
+        travelDistanceMeters: Number(travelDistance.toFixed(2)),
 
-        travelDistanceMiles:
-          Number(
-            milesTravelled.toFixed(
-              2,
-            ),
-          ),
+        travelDistanceMiles: Number(milesTravelled.toFixed(2)),
       },
 
       activeBoosts,
 
       hexPartyActive,
 
-      data:
-        pinDeleted
-          ? null
-          : pin,
+      data: pinDeleted ? null : pin,
     });
   } catch (error) {
-    if (
-      session.inTransaction()
-    ) {
+    if (session.inTransaction()) {
       await session.abortTransaction();
     }
 
-    console.error(
-      "Fake Pin Error:",
-      error,
-    );
+    console.error("Fake Pin Error:", error);
 
     return res.status(500).json({
       success: false,
 
-      message:
-        error.message ||
-        "Server Error",
+      message: error.message || "Server Error",
     });
   } finally {
     await session.endSession();

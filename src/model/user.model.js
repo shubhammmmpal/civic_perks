@@ -45,6 +45,51 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "Observer",
     },
+    skillTrees: {
+  cartographer: {
+    verifiedPins: {
+      type: Number,
+      default: 0,
+    },
+
+    rank: {
+      type: String,
+      default: "Unranked",
+    },
+
+    emoji: {
+      type: String,
+      default: "",
+    },
+
+    level: {
+      type: Number,
+      default: 1,
+    },
+  },
+
+  actionHero: {
+    solvedPins: {
+      type: Number,
+      default: 0,
+    },
+
+    rank: {
+      type: String,
+      default: "Unranked",
+    },
+
+    emoji: {
+      type: String,
+      default: "",
+    },
+
+    level: {
+      type: Number,
+      default: 1,
+    },
+  },
+},
     xp: { type: Number, default: 0, min: 0 },
     credits: { type: Number, default: 10000, min: 0 },
     //   boostType: { type:String, enum: ["X-Ray Filter", "Golden Cargo", "Radar Flare", "Megaphone"] , default:'none'},

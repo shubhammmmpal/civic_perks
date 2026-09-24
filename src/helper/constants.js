@@ -325,3 +325,96 @@ export const VALIDATION_CONFIG = {
 
   SHADOWBAN_TRUST_THRESHOLD: 40,
 };
+
+export const CARTOGRAPHER_RANKS = [
+  { count: 550, name: "The Illuminator", emoji: "☀️", level: 2 },
+  { count: 525, name: "Oracle", emoji: "🔮", level: 2 },
+  { count: 500, name: "Overseer", emoji: "🦅", level: 2 },
+  { count: 450, name: "Pathfinder", emoji: "🔥", level: 2 },
+  { count: 400, name: "Vanguard", emoji: "🚩", level: 2 },
+  { count: 350, name: "Sentinel", emoji: "🛡️", level: 2 },
+  { count: 300, name: "Surveyor", emoji: "🗺️", level: 2 },
+  { count: 250, name: "Scout", emoji: "🧭", level: 2 },
+  { count: 200, name: "Spotter", emoji: "🎯", level: 2 },
+  { count: 150, name: "Observer", emoji: "🔭", level: 2 },
+
+  { count: 100, name: "The Apex", emoji: "💠", level: 1 },
+  { count: 90, name: "Visionary", emoji: "👁️", level: 1 },
+  { count: 80, name: "Amplifier", emoji: "📢", level: 1 },
+  { count: 70, name: "Beacon", emoji: "🚨", level: 1 },
+  { count: 60, name: "Auditor", emoji: "📋", level: 1 },
+  { count: 50, name: "Radar", emoji: "📡", level: 1 },
+  { count: 40, name: "Tracker", emoji: "📍", level: 1 },
+  { count: 30, name: "Scanner", emoji: "🔦", level: 1 },
+  { count: 20, name: "Lens", emoji: "🔍", level: 1 },
+  { count: 10, name: "Spark", emoji: "⚡", level: 1 },
+];
+
+export const ACTION_HERO_RANKS = [
+  { count: 650, name: "The Silencer", emoji: "🔇", level: 2 },
+  { count: 550, name: "Heavyweight", emoji: "🏗️", level: 2 },
+  { count: 460, name: "Ironclad", emoji: "🛡️", level: 2 },
+  { count: 380, name: "Enforcer", emoji: "🚧", level: 2 },
+  { count: 310, name: "Optimizer", emoji: "💠", level: 2 },
+  { count: 250, name: "Specialist", emoji: "🥽", level: 2 },
+  { count: 200, name: "Fixer", emoji: "🦾", level: 2 },
+  { count: 160, name: "Stabilizer", emoji: "⚓", level: 2 },
+  { count: 130, name: "Wrench", emoji: "🔧", level: 2 },
+  { count: 110, name: "Responder", emoji: "🚨", level: 2 },
+
+  { count: 100, name: "The Warden", emoji: "🗝️", level: 1 },
+  { count: 90, name: "Restorer", emoji: "🛠️", level: 1 },
+  { count: 80, name: "Architect", emoji: "📐", level: 1 },
+  { count: 70, name: "Constructor", emoji: "🧱", level: 1 },
+  { count: 60, name: "Closer", emoji: "🔒", level: 1 },
+  { count: 50, name: "Catalyst", emoji: "⚡", level: 1 },
+  { count: 40, name: "Operator", emoji: "🎛️", level: 1 },
+  { count: 30, name: "Technician", emoji: "⚙️", level: 1 },
+  { count: 20, name: "Mender", emoji: "🪛", level: 1 },
+  { count: 10, name: "Helper", emoji: "🩹", level: 1 },
+];
+
+export const getSkillRank = (count, ranks) => {
+  return (
+    ranks.find((rank) => count >= rank.count) || {
+      count: 0,
+      name: "Unranked",
+      emoji: "",
+      level: 1,
+    }
+  );
+};
+
+export const getActionHeroRank = (solvedPins = 0) => {
+  const count = Number(solvedPins || 0);
+
+  const current =
+    ACTION_HERO_RANKS.find((rank) => count >= rank.count) || {
+      count: 0,
+      name: "Unranked",
+      emoji: "",
+      level: 1,
+    };
+
+  // Array descending hai, so next milestone find karna
+  const ascending = [...ACTION_HERO_RANKS].reverse();
+
+  const next = ascending.find((rank) => rank.count > count) || null;
+
+  return {
+    ...current,
+
+    solvedPins: count,
+
+    nextRank: next
+      ? {
+          name: next.name,
+          emoji: next.emoji,
+          requiredFixes: next.count,
+          remainingFixes: next.count - count,
+        }
+      : null,
+
+    maxRankReached: !next,
+  };
+};
