@@ -204,23 +204,127 @@ export const createPin = async (req, res) => {
 
     user.credits = user.credits - pinBounty + 5;
 
-    const updatedXP = user.xp + xpReward;
+//     const updatedXP = user.xp + xpReward;
 
-    // Update XP BEFORE checkLevelUp
-    user.xp = updatedXP;
+//     // Update XP BEFORE checkLevelUp
+//     user.xp = updatedXP;
 
-    // Trust score
-    user.trustScore = Math.min(
-      99.9,
-      Number((user.trustScore + 0.1).toFixed(1)),
-    );
+//     // Trust score
+//     user.trustScore = Math.min(
+//       99.9,
+//       Number((user.trustScore + 0.1).toFixed(1)),
+//     );
 
-    // Check level up
-    await checkLevelUp(user, updatedXP);
+//     // Check level up
+//     const levelup = await checkLevelUp(user, updatedXP);
+// if(levelup){}
+//     // Save rewards
+//     await user.save();
 
-    // Save rewards
-    await user.save();
 
+// =========================================
+// STORE PREVIOUS LEVEL
+// =========================================
+
+const oldLevel = Number(user.level || 1);
+
+// =========================================
+// CALCULATE UPDATED XP
+// =========================================
+
+const updatedXP =
+  Number(user.xp || 0) + Number(xpReward || 0);
+
+// =========================================
+// UPDATE USER XP
+// =========================================
+
+user.xp = updatedXP;
+
+// =========================================
+// UPDATE TRUST SCORE
+// =========================================
+
+user.trustScore = Math.min(
+  99.9,
+  Number(
+    (Number(user.trustScore || 0) + 0.1).toFixed(1),
+  ),
+);
+
+// =========================================
+// CHECK LEVEL UP
+// =========================================
+
+const levelup = await checkLevelUp(user, updatedXP);
+
+// =========================================
+// PREPARE LEVEL-UP NOTIFICATION
+// =========================================
+
+let levelUpNotification = null;
+
+if (Number(user.level) > oldLevel) {
+  const levelMessage = getLevelUpNotification({
+    level: Number(user.level),
+    levelName: user.levelName,
+    emoji: user.levelEmoji || "",
+  });
+
+  levelUpNotification = {
+    title: levelMessage.title,
+    body: levelMessage.body,
+
+    data: {
+      type: "LEVEL_UP",
+      level: String(user.level),
+      levelName: String(user.levelName || ""),
+      emoji: String(user.levelEmoji || ""),
+    },
+  };
+}
+
+// =========================================
+// SAVE USER REWARDS
+// =========================================
+
+await user.save();
+
+// =========================================
+// SAVE LEVEL-UP NOTIFICATION
+// =========================================
+
+if (levelUpNotification) {
+  await Notification.create({
+    title: levelUpNotification.title,
+
+    description: levelUpNotification.body,
+
+    notificationType: "LEVEL_UP",
+
+    receivers: [userId],
+
+    senderRole: "system",
+
+    isRead: false,
+  });
+
+  // =======================================
+  // SEND LEVEL-UP PUSH NOTIFICATION
+  // =======================================
+
+  if (user.fcmToken) {
+    await sendNotification({
+      tokens: [user.fcmToken],
+
+      title: levelUpNotification.title,
+
+      body: levelUpNotification.body,
+
+      data: levelUpNotification.data,
+    });
+  }
+}
     // =========================================
     // UPDATE STATES
     // =========================================

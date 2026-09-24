@@ -1260,3 +1260,1592 @@ export const banUser = async (req, res) => {
     }
 
 };
+
+
+// export const validatePin = async (req, res) => {
+//   const session = await mongoose.startSession();
+
+//   try {
+//     await session.startTransaction();
+
+//     const { pinId } = req.params;
+//     const userId = req.user.id;
+//     console.log(userId);
+
+//     // =========================================
+//     // CURRENT USER LIVE LOCATION (FRONTEND GPS)
+//     // =========================================
+
+//     const { currentLatitude, currentLongitude, hexagonId } = req.body;
+
+// if (
+//   currentLatitude === undefined ||
+//   currentLongitude === undefined
+// ) {
+//   await session.abortTransaction();
+
+//   return res.status(400).json({
+//     success: false,
+//     message: "Current location is required",
+//   });
+// }
+
+//     // =========================================
+//     // FIND USER
+//     // =========================================
+
+//     const user = await User.findById(userId).session(session);
+
+//     if (!user) {
+//       await session.abortTransaction();
+
+//       return res.status(404).json({
+//         success: false,
+//         message: "User not found",
+//       });
+//     }
+
+//     // =========================================
+//     // FIND PIN
+//     // =========================================
+
+//     const pin = await Pin.findById(pinId).session(session);
+
+//     if (!pin) {
+//       await session.abortTransaction();
+
+//       return res.status(404).json({
+//         success: false,
+//         message: "Pin not found",
+//       });
+//     }
+
+//     if (
+//       pin.islocked === true &&
+//       pin.lockedBy?.toString() !== userId.toString()
+//     ) {
+//       await session.abortTransaction();
+
+//       return res.status(400).json({
+//         success: false,
+//         message: "This Pin is locked",
+//         lockedBy: pin.lockedBy,
+//       });
+//     }
+
+//     const activeBoosts = await getActiveBoosts(userId);
+//     const hexPartyActive = await isHexPartyActive(pin.hexagonId);
+
+//     console.log(activeBoosts);
+//     console.log(hexPartyActive);
+
+//     const reservedCargo = await GoldenCargo.findOne({
+//       pinId: pin._id,
+//       expiresAt: { $gt: new Date() },
+//     }).session(session);
+
+//     if (reservedCargo && reservedCargo.userId.toString() !== userId) {
+//       await session.abortTransaction();
+
+//       return res.status(403).json({
+//         success: false,
+//         message: "This resource pin is reserved by another Golden Cargo user",
+//       });
+//     }
+
+//     // =====================================================
+//     // GOLDEN CARGO RESERVATION CHECK
+//     // =====================================================
+
+//     if (pin.category === "Resources (Zero-Waste, Upcycling & Utilities)") {
+//       const activeCargo = await GoldenCargo.findOne({
+//         pinId: pin._id,
+//         expiresAt: { $gt: new Date() },
+//       }).session(session);
+
+//       if (
+//         pin.category === "Resources (Zero-Waste, Upcycling & Utilities)" &&
+//         activeCargo
+//       ) {
+//         const alreadyReserved = activeCargo.pinId.some(
+//           (id) => id.toString() === pin._id.toString(),
+//         );
+
+//         if (!alreadyReserved) {
+//           if (activeCargo.pinId.length >= 3) {
+//             await session.abortTransaction();
+
+//             return res.status(400).json({
+//               success: false,
+//               message: "Golden Cargo can reserve maximum 3 resource pins",
+//             });
+//           }
+
+//           activeCargo.pinId.push(pin._id);
+
+//           await activeCargo.save({ session });
+
+//           pin.reservationExpiresAt = activeCargo.expiresAt;
+
+//           await pin.save({ session });
+//         }
+//       }
+
+//       if (activeCargo) {
+//         const isCargoOwner = activeCargo.userId.toString() === userId;
+
+//         if (!isCargoOwner) {
+//           await session.abortTransaction();
+
+//           return res.status(403).json({
+//             success: false,
+//             message:
+//               "This resource pin is reserved by Golden Cargo and cannot be validated until the reservation expires.",
+//             reservedUntil: activeCargo.expiresAt,
+//           });
+//         }
+//       }
+//     }
+
+//     // =========================================
+//     // PREVENT CREATOR VALIDATION
+//     // =========================================
+
+//     if (pin.createdBy.toString() === userId) {
+//       await session.abortTransaction();
+
+//       return res.status(400).json({
+//         success: false,
+//         message: "You cannot validate your own pin",
+//       });
+//     }
+
+//     // =========================================
+//     // PIN LOCATION
+//     // =========================================
+
+//     const pinLongitude = pin.location.coordinates[0];
+//     const pinLatitude = pin.location.coordinates[1];
+
+//     // =========================================
+//     // LIVE GPS → PIN DISTANCE
+//     // Used for 10 meter validation
+//     // =========================================
+
+//     const liveDistance = calculateDistanceInMeters(
+//       Number(currentLatitude),
+//       Number(currentLongitude),
+//       pinLatitude,
+//       pinLongitude,
+//     );
+
+//     // =========================================
+//     // CHECK 10 METER RADIUS
+//     // =========================================
+
+//     // if (liveDistance > 10) 
+//     if (liveDistance > VALIDATION_CONFIG.MAX_DISTANCE_METERS)
+//       {
+//       await session.abortTransaction();
+
+//       return res.status(403).json({
+//         success: false,
+//         message: `You must be within ${VALIDATION_CONFIG.MAX_DISTANCE_METERS} meters of the pin location`,
+//         // message: "You must be within 10 meters of the pin location",
+//         distance: `${liveDistance.toFixed(2)} meters`,
+//       });
+//     }
+
+//     // =========================================
+//     // FIND ACTIVITY
+//     // =========================================
+
+//     const activity = await Activity.findOne({
+//       userId,
+//       pinId,
+//       status: "pending",
+//     })
+//       .sort({ createdAt: -1 })
+//       .session(session);
+
+//     // =========================================
+//     // CHECK ACTIVITY
+//     // =========================================
+
+//     if (!activity) {
+//       const activeCargo = await GoldenCargo.findOne({
+//         userId,
+//         pinId: pin._id,
+//         expiresAt: { $gt: new Date() },
+//       }).session(session);
+
+//       const isReservedResourcePin =
+//         pin.category === "Resources (Zero-Waste, Upcycling & Utilities)" &&
+//         activeCargo;
+
+//       if (!isReservedResourcePin) {
+//         await session.abortTransaction();
+
+//         return res.status(404).json({
+//           success: false,
+//           message: "No pending activity found",
+//         });
+//       }
+//     }
+
+//     // =========================================
+//     // UPDATE STATUS
+//     // =========================================
+
+//     activity.status = "completed";
+
+//     await activity.save({ session });
+
+//     // =========================================
+//     // TRAVEL DISTANCE FROM ACTIVITY
+//     // =========================================
+
+//     const travelDistance = activity.distance || 0;
+
+//     const METER_PER_MILE = 1609.344;
+
+// const milesTravelled =
+//   travelDistance / METER_PER_MILE;
+
+// const creditsEarned =
+//   Number((milesTravelled * 5).toFixed(2));
+//     const baseTravelXP = Math.max(1, Math.floor(travelDistance / 100));
+
+//     const travelXP = calculateXPWithBoosts({
+//       baseXP: baseTravelXP,
+//       doubleXP: activeBoosts.Double_XP,
+//       hexParty: hexPartyActive,
+//     });
+
+//     // =========================================
+//     // FIND VALIDATION
+//     // =========================================
+
+//     let validation = await Validation.findOne({
+//       pinID: pinId,
+//     }).session(session);
+
+//     // =====================================================
+//     // FIRST VALIDATOR
+//     // =====================================================
+
+// //     if (!validation) {
+// //       validation = new Validation({
+// //         pinID: pinId,
+// //         validatedBy: userId,
+// //         status: "orange",
+// //         beneficiaries: [],
+// //       });
+
+// //       await validation.save({ session });
+
+// //       // =========================================
+// //       // UPDATE PIN
+// //       // =========================================
+
+// //       pin.validatedBy = userId;
+// //       pin.status = "orange";
+
+// //       // increase score
+// //       // pin.pinScore += 10;
+// //       const voteWeight = getValidationWeight(user);
+
+// // pin.pinScore = Number(pin.pinScore || 0) + voteWeight;
+
+// //       // =========================================
+// //       // AUTO VERIFY PIN
+// //       // CREATOR REWARD ONLY ONCE
+// //       // =========================================
+
+// //       let pinVerifiedNotification = null;
+
+// //       if (
+// //         pin.pinScore >= 100 &&
+// //         (!pin.pinStatus || pin.pinStatus === "pending")
+// //       ) {
+// //         // update pin status
+// //         pin.pinStatus = "verified";
+// //         pin.status = "green";
+
+// //         // =========================================
+// //         // REWARD PIN CREATOR
+// //         // =========================================
+
+// //         const pinCreator = await User.findById(pin.createdBy).session(session);
+
+// //         if (pinCreator) {
+// //           // give xp
+// //           pinCreator.xp += 15;
+
+// //           // increase trust score
+// //           pinCreator.trustScore = Math.min(
+// //             99.9,
+// //             Number((pinCreator.trustScore + 0.5).toFixed(1)),
+// //           );
+
+// //           // =========================================
+// //           // UPDATE LEVEL
+// //           // =========================================
+
+// //           const creatorLevelData = getLevelData(pinCreator.xp);
+
+// //           pinCreator.level = creatorLevelData.level;
+// //           pinCreator.levelName = creatorLevelData.name;
+
+// //           await pinCreator.save({ session });
+
+// //           pinVerifiedNotification = {
+// //             tokens: pinCreator.fcmToken ? [pinCreator.fcmToken] : [],
+// //             title: "🎉 Pin Verified",
+// //             body: "Congratulations! Your pin has been verified. You earned 15 XP.",
+// //             data: {
+// //               type: "PIN_VERIFIED",
+// //               pinId: pin._id.toString(),
+// //               xp: 15,
+// //             },
+// //           };
+// //         }
+// //       }
+
+// //       // =========================================
+// //       // PENALIZE FAKE REPORTERS
+// //       // =========================================
+
+// //       if (pin.fakereportingBy.length > 0 && !pin.fakeReportersPenalized) {
+// //         // get all fake reporters
+// //         const fakeReporters = await User.find({
+// //           _id: { $in: pin.fakereportingBy },
+// //         }).session(session);
+
+// //         for (const reporter of fakeReporters) {
+// //           // =========================================
+// //           // DECREASE TRUST SCORE
+// //           // =========================================
+
+// //           reporter.trustScore = Math.max(
+// //             0,
+// //             Number((reporter.trustScore - 15).toFixed(1)),
+// //           );
+
+// //           // =========================================
+// //           // BAN USER IF BELOW 40
+// //           // =========================================
+
+// //           if (reporter.trustScore < 40) {
+// //             reporter.status = "banned";
+// //           }
+
+// //           // =========================================
+// //           // SAVE USER
+// //           // =========================================
+
+// //           await reporter.save({ session });
+
+// //           // =========================================
+// //           // CREATE FINE LOG
+// //           // =========================================
+
+// //           await Fine.create(
+// //             [
+// //               {
+// //                 userId: reporter._id,
+// //                 amount: 15,
+// //                 reason: `False fake report on verified pin ${pin._id}`,
+// //               },
+// //             ],
+// //             { session },
+// //           );
+// //         }
+
+// //         // =========================================
+// //         // PREVENT DUPLICATE PENALTY
+// //         // =========================================
+
+// //         pin.fakeReportersPenalized = true;
+// //       }
+
+// //       await pin.save({ session });
+
+// //       // =========================================
+// //       // REWARD VALIDATOR
+// //       // =========================================
+
+// //       const updated_lavel = user.xp + travelXP;
+// //       await checkLevelUp(user, updated_lavel, session);
+
+// //       user.xp += travelXP;
+// //       user.credits += 5;
+// //       await updateLeaderboardXP(user._id, travelXP, session);
+
+// //       // trust score increase
+// //       user.trustScore = Math.min(
+// //         99.9,
+// //         Number((user.trustScore + 0.1).toFixed(1)),
+// //       );
+
+// //       // =========================================
+// //       // UPDATE LEVEL
+// //       // =========================================
+
+// //       await user.save({ session });
+
+// //       // =========================================
+// //       // UPDATE USER STATS
+// //       // =========================================
+
+// //       // =========================================
+// //       // FIND USER STATS
+// //       // =========================================
+// //       let userStats = await States.findOne({
+// //         userId: userId,
+// //       }).session(session);
+
+// //       // =========================================
+// //       // CREATE IF NOT EXISTS
+// //       // =========================================
+
+// //       if (!userStats) {
+// //         userStats = new States({
+// //           user: userId,
+// //           pinsValidated: 1,
+// //         });
+// //       } else {
+// //         userStats.pinsValidated += 1;
+// //       }
+
+// //       // =========================================
+// //       // SAVE
+// //       // =========================================
+
+// //       await userStats.save({ session });
+
+// //       // =========================================
+// //       // CREATE ACTIVITY LOG
+// //       // =========================================
+
+// //       await Activity.create(
+// //         [
+// //           {
+// //             userId: userId,
+
+// //             activityType: "pin_validated",
+
+// //             pinId: pin._id,
+
+// //             pinTitle: pin.description || "Pin Validation",
+
+// //             images: pin.images || [],
+
+// //             xpEarned: travelXP,
+
+// //             creditsSpent: 5,
+
+// //             distance: travelDistance,
+
+// //             activityLocation: {
+// //               latitude: pinLatitude,
+// //               longitude: pinLongitude,
+// //             },
+
+// //             startLocation: {
+// //               latitude: Number(currentLatitude),
+// //               longitude: Number(currentLongitude),
+// //             },
+
+// //             endLocation: {
+// //               latitude: pinLatitude,
+// //               longitude: pinLongitude,
+// //             },
+
+// //             status: "completed",
+// //           },
+// //         ],
+// //         { session },
+// //       );
+
+// //       // =========================================
+// //       // PREPARE NOTIFICATIONS
+// //       // =========================================
+
+// //       const pinCreator = await User.findById(pin.createdBy)
+// //         .select("fcmToken name")
+// //         .session(session);
+
+// //       const validatorRewardNotification = {
+// //         tokens: user.fcmToken ? [user.fcmToken] : [],
+// //         title: "✅ Pin Validated",
+// //         body: `You earned ${travelXP} XP and 5 Credits for validating this pin.`,
+// //         data: {
+// //           type: "PIN_VALIDATED",
+// //           pinId: pin._id.toString(),
+// //           xp: travelXP,
+// //           credits: 5,
+// //         },
+// //       };
+
+// //       const creatorNotification = {
+// //         tokens: pinCreator?.fcmToken ? [pinCreator.fcmToken] : [],
+// //         title: "📍 Pin Validation",
+// //         body: `${user.name} validated your pin.`,
+// //         data: {
+// //           type: "PIN_VALIDATED_BY_USER",
+// //           pinId: pin._id.toString(),
+// //           validatorId: user._id.toString(),
+// //         },
+// //       };
+
+// //       // =========================================
+// //       // COMMIT
+// //       // =========================================
+
+// //       await session.commitTransaction();
+
+// //       const notifications = [
+// //         sendNotification(validatorRewardNotification),
+// //         sendNotification(creatorNotification),
+// //       ];
+
+// //       if (pinVerifiedNotification) {
+// //         notifications.push(sendNotification(pinVerifiedNotification));
+// //       }
+
+// //       await Promise.all(notifications);
+
+// //       return res.status(200).json({
+// //         success: true,
+// //         message: "Pin validated successfully",
+
+// //         rewards: {
+// //           xpEarned: travelXP,
+// //           creditsEarned: 5,
+// //           trustScoreEarned: 0.1,
+// //         },
+
+// //         pinData: {
+// //           pinScore: pin.pinScore,
+// //           pinStatus: pin.pinStatus,
+// //           status: pin.status,
+// //         },
+
+// //         distanceInfo: {
+// //           liveDistanceMeters: liveDistance.toFixed(2),
+
+// //           travelDistanceMeters: travelDistance.toFixed(2),
+// //         },
+// //         activeBoosts,
+// //         hexPartyActive,
+// //       });
+// //     }
+
+
+// if (!validation) {
+//   // =====================================================
+//   // FIRST VALIDATOR
+//   // =====================================================
+
+//   const voteWeight = getValidationWeight(user);
+
+//   // =====================================================
+//   // CREATE VALIDATION WITH FIRST WEIGHTED VOTE
+//   // =====================================================
+
+//   validation = new Validation({
+//     pinID: pinId,
+
+//     // Existing field - keep for backward compatibility
+//     validatedBy: userId,
+
+//     status: "orange",
+
+//     beneficiaries: [],
+
+//     // =====================================================
+//     // WEIGHTED VOTE
+//     // =====================================================
+
+//     votes: [
+//       {
+//         userId: user._id,
+
+//         vote: "VALID",
+
+//         weight: voteWeight,
+
+//         // Snapshot at the time of voting
+//         trustScore: Number(user.trustScore || 0),
+
+//         level: Number(user.level || 1),
+
+//         levelName: user.levelName || null,
+
+//         // GPS snapshot
+//         location: {
+//           latitude: Number(currentLatitude),
+//           longitude: Number(currentLongitude),
+//         },
+
+//         distanceMeters: Number(liveDistance),
+
+//         // First validator rewards
+//         xpEarned: travelXP,
+
+//         creditsEarned: 5,
+//       },
+//     ],
+
+//     // =====================================================
+//     // CONSENSUS VALUES
+//     // =====================================================
+
+//     validWeight: voteWeight,
+
+//     fakeWeight: 0,
+
+//     validVotes: 1,
+
+//     fakeVotes: 0,
+
+//     confidenceScore: voteWeight,
+
+//     consensusStatus: "PENDING",
+//   });
+
+//   // =====================================================
+//   // UPDATE PIN
+//   // =====================================================
+
+//   pin.validatedBy = userId;
+
+//   pin.status = "orange";
+
+//   /*
+//   |--------------------------------------------------------------------------
+//   | Validation is source of truth.
+//   | Pin score is only synced from validation.
+//   |--------------------------------------------------------------------------
+//   */
+
+//   pin.pinScore = validation.confidenceScore;
+
+//   // =====================================================
+//   // CHECK IF FIRST VOTE ALREADY VERIFIES PIN
+//   // =====================================================
+
+//   let pinVerifiedNotification = null;
+
+//   if (
+//     validation.confidenceScore >=
+//       VALIDATION_CONFIG.VERIFIED_SCORE &&
+//     validation.consensusStatus === "PENDING"
+//   ) {
+//     // =====================================================
+//     // MARK VALIDATION VERIFIED
+//     // =====================================================
+
+//     validation.consensusStatus = "VERIFIED";
+
+//     validation.consensusReachedAt = new Date();
+
+//     validation.status = "green";
+
+//     // =====================================================
+//     // MARK PIN VERIFIED
+//     // =====================================================
+
+//     pin.pinStatus = "verified";
+
+//     pin.status = "green";
+
+//     // =====================================================
+//     // REWARD PIN CREATOR
+//     // =====================================================
+
+//     const pinCreator = await User.findById(
+//       pin.createdBy,
+//     ).session(session);
+
+//     if (pinCreator) {
+//       pinCreator.xp += 15;
+
+//       pinCreator.trustScore = Math.min(
+//         99.9,
+//         Number(
+//           (
+//             Number(pinCreator.trustScore || 0) + 0.5
+//           ).toFixed(1),
+//         ),
+//       );
+
+//       // =====================================================
+//       // UPDATE CREATOR LEVEL
+//       // =====================================================
+
+//       const creatorLevelData = getLevelData(
+//         pinCreator.xp,
+//       );
+
+//       pinCreator.level = creatorLevelData.level;
+
+//       pinCreator.levelName =
+//         creatorLevelData.name;
+
+//       await pinCreator.save({ session });
+
+//       // =====================================================
+//       // PREPARE VERIFIED NOTIFICATION
+//       // =====================================================
+
+//       pinVerifiedNotification = {
+//         tokens: pinCreator.fcmToken
+//           ? [pinCreator.fcmToken]
+//           : [],
+
+//         title: "🎉 Pin Verified",
+
+//         body:
+//           "Congratulations! Your pin has been verified. You earned 15 XP.",
+
+//         data: {
+//           type: "PIN_VERIFIED",
+
+//           pinId: pin._id.toString(),
+
+//           xp: 15,
+//         },
+//       };
+//     }
+//   }
+
+//   // =====================================================
+//   // PENALIZE USERS WHO FALSELY REPORTED THIS PIN
+//   // ONLY WHEN PIN IS ACTUALLY VERIFIED
+//   // =====================================================
+
+//   if (
+//     validation.consensusStatus === "VERIFIED" &&
+//     pin.fakereportingBy?.length > 0 &&
+//     !pin.fakeReportersPenalized
+//   ) {
+//     const fakeReporters = await User.find({
+//       _id: {
+//         $in: pin.fakereportingBy,
+//       },
+//     }).session(session);
+
+//     for (const reporter of fakeReporters) {
+//       // =====================================================
+//       // DECREASE TRUST SCORE
+//       // =====================================================
+
+//       reporter.trustScore = Math.max(
+//         0,
+//         Number(
+//           (
+//             Number(reporter.trustScore || 0) - 15
+//           ).toFixed(1),
+//         ),
+//       );
+
+//       // =====================================================
+//       // CURRENT BAN RULE
+//       // =====================================================
+//       // Later this can be changed to shadowBan.
+
+//       if (reporter.trustScore < 40) {
+//         reporter.status = "banned";
+//       }
+
+//       await reporter.save({ session });
+
+//       // =====================================================
+//       // FINE LOG
+//       // =====================================================
+
+//       await Fine.create(
+//         [
+//           {
+//             userId: reporter._id,
+
+//             amount: 15,
+
+//             reason: `False fake report on verified pin ${pin._id}`,
+//           },
+//         ],
+//         {
+//           session,
+//         },
+//       );
+//     }
+
+//     // Prevent duplicate penalty
+//     pin.fakeReportersPenalized = true;
+//   }
+
+//   // =====================================================
+//   // SAVE VALIDATION + PIN
+//   // =====================================================
+
+//   await validation.save({ session });
+
+//   await pin.save({ session });
+
+//   // =====================================================
+//   // REWARD FIRST VALIDATOR
+//   // =====================================================
+
+//   const updated_level =
+//     Number(user.xp || 0) + travelXP;
+
+//   await checkLevelUp(
+//     user,
+//     updated_level,
+//     session,
+//   );
+
+//   user.xp =
+//     Number(user.xp || 0) + travelXP;
+
+//   // user.credits =
+//   //   Number(user.credits || 0) + 5;
+// user.credits =
+//   Number(user.credits || 0) + creditsEarned;
+//   await updateLeaderboardXP(
+//     user._id,
+//     travelXP,
+//     session,
+//   );
+
+//   // =====================================================
+//   // VALIDATOR TRUST SCORE
+//   // =====================================================
+
+//   user.trustScore = Math.min(
+//     99.9,
+//     Number(
+//       (
+//         Number(user.trustScore || 0) + 0.1
+//       ).toFixed(1),
+//     ),
+//   );
+
+//   await user.save({ session });
+
+//   // =====================================================
+//   // UPDATE USER STATS
+//   // =====================================================
+
+//   let userStats = await States.findOne({
+//     user: userId,
+//   }).session(session);
+
+//   if (!userStats) {
+//     userStats = new States({
+//       user: userId,
+
+//       pinsValidated: 1,
+//     });
+//   } else {
+//     userStats.pinsValidated =
+//       Number(userStats.pinsValidated || 0) + 1;
+//   }
+
+//   await userStats.save({ session });
+
+//   // =====================================================
+//   // CREATE ACTIVITY LOG
+//   // =====================================================
+
+//   await Activity.create(
+//     [
+//       {
+//         userId: userId,
+
+//         activityType: "pin_validated",
+
+//         pinId: pin._id,
+
+//         pinTitle:
+//           pin.description || "Pin Validation",
+
+//         images: pin.images || [],
+
+//         xpEarned: travelXP,
+
+//         creditsSpent: 5,
+
+//         distance: travelDistance,
+
+//         activityLocation: {
+//           latitude: pinLatitude,
+
+//           longitude: pinLongitude,
+//         },
+
+//         startLocation: {
+//           latitude: Number(currentLatitude),
+
+//           longitude: Number(currentLongitude),
+//         },
+
+//         endLocation: {
+//           latitude: pinLatitude,
+
+//           longitude: pinLongitude,
+//         },
+
+//         status: "completed",
+//       },
+//     ],
+//     {
+//       session,
+//     },
+//   );
+
+//   // =====================================================
+//   // PIN CREATOR
+//   // =====================================================
+
+//   const pinCreator = await User.findById(
+//     pin.createdBy,
+//   )
+//     .select("fcmToken name")
+//     .session(session);
+
+//   // =====================================================
+//   // VALIDATOR NOTIFICATION
+//   // =====================================================
+
+//   const validatorRewardNotification = {
+//     tokens: user.fcmToken
+//       ? [user.fcmToken]
+//       : [],
+
+//     title: "✅ Pin Validated",
+
+//     body: `You earned ${travelXP} XP and 5 Credits for validating this pin.`,
+
+//     data: {
+//       type: "PIN_VALIDATED",
+
+//       pinId: pin._id.toString(),
+
+//       xp: travelXP,
+
+//       credits: 5,
+
+//       voteWeight: String(voteWeight),
+//     },
+//   };
+
+//   // =====================================================
+//   // CREATOR NOTIFICATION
+//   // =====================================================
+
+//   const creatorNotification = {
+//     tokens: pinCreator?.fcmToken
+//       ? [pinCreator.fcmToken]
+//       : [],
+
+//     title: "📍 Pin Validation",
+
+//     body: `${user.name} validated your pin.`,
+
+//     data: {
+//       type: "PIN_VALIDATED_BY_USER",
+
+//       pinId: pin._id.toString(),
+
+//       validatorId: user._id.toString(),
+
+//       voteWeight: String(voteWeight),
+//     },
+//   };
+
+//   // =====================================================
+//   // COMMIT TRANSACTION
+//   // =====================================================
+
+//   await session.commitTransaction();
+
+//   // =====================================================
+//   // SEND NOTIFICATIONS AFTER COMMIT
+//   // =====================================================
+
+//   const notifications = [];
+
+//   if (
+//     validatorRewardNotification.tokens.length
+//   ) {
+//     notifications.push(
+//       sendNotification(
+//         validatorRewardNotification,
+//       ),
+//     );
+//   }
+
+//   if (creatorNotification.tokens.length) {
+//     notifications.push(
+//       sendNotification(creatorNotification),
+//     );
+//   }
+
+//   if (
+//     pinVerifiedNotification?.tokens?.length
+//   ) {
+//     notifications.push(
+//       sendNotification(
+//         pinVerifiedNotification,
+//       ),
+//     );
+//   }
+
+//   await Promise.all(notifications);
+
+//   // =====================================================
+//   // RESPONSE
+//   // =====================================================
+
+//   return res.status(200).json({
+//     success: true,
+
+//     message:
+//       validation.consensusStatus === "VERIFIED"
+//         ? "Pin validated and verified successfully"
+//         : "Pin validated successfully",
+
+//     vote: {
+//       type: "VALID",
+
+//       weight: voteWeight,
+
+//       trustScore: user.trustScore,
+
+//       level: user.level,
+
+//       levelName: user.levelName,
+//     },
+
+//     consensus: {
+//       validWeight: validation.validWeight,
+
+//       fakeWeight: validation.fakeWeight,
+
+//       validVotes: validation.validVotes,
+
+//       fakeVotes: validation.fakeVotes,
+
+//       confidenceScore:
+//         validation.confidenceScore,
+
+//       status:
+//         validation.consensusStatus,
+//     },
+
+//     rewards: {
+//       xpEarned: travelXP,
+
+//       // creditsEarned: 5,
+//       creditsEarned,
+
+//       trustScoreEarned: 0.1,
+//     },
+
+//     pinData: {
+//       pinScore: pin.pinScore,
+
+//       pinStatus: pin.pinStatus,
+
+//       status: pin.status,
+//     },
+
+//     distanceInfo: {
+//       liveDistanceMeters:
+//         liveDistance.toFixed(2),
+
+//       travelDistanceMeters:
+//         travelDistance.toFixed(2),
+//     },
+
+//     activeBoosts,
+
+//     hexPartyActive,
+//   });
+// }
+
+//     // =========================================
+//     // UPDATE USER STATS
+//     // =========================================
+
+//     let userStats = await States.findOne({
+//       user: userId,
+//     }).session(session);
+
+//     // create if not exists
+//     if (!userStats) {
+//       userStats = new States({
+//         user: userId,
+//         pinsValidated: 1,
+//       });
+//     } else {
+//       userStats.pinsValidated += 1;
+//     }
+
+//     await userStats.save({ session });
+
+//     // =====================================================
+//     // PREVENT SAME VALIDATOR
+//     // =====================================================
+
+//     if (
+//       validation.validatedBy &&
+//       validation.validatedBy.toString() === userId
+//     ) {
+//       await session.abortTransaction();
+
+//       return res.status(400).json({
+//         success: false,
+//         message: "You already validated this pin",
+//       });
+//     }
+
+//     // =====================================================
+//     // CHECK 24 HOUR WINDOW
+//     // =====================================================
+
+//     const createdAt = new Date(validation.createdAt);
+
+//     const now = new Date();
+
+//     const diffHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+
+//     if (diffHours > 24) {
+//       await session.abortTransaction();
+
+//       return res.status(400).json({
+//         success: false,
+//         message: "Validation window expired",
+//       });
+//     }
+
+//     // =====================================================
+//     // ALREADY BENEFICIARY
+//     // =====================================================
+
+//     const alreadyBeneficiary = validation.beneficiaries.some(
+//       (id) => id.toString() === userId,
+//     );
+
+//     if (alreadyBeneficiary) {
+//       await session.abortTransaction();
+
+//       return res.status(400).json({
+//         success: false,
+//         message: "Already validated as beneficiary",
+//       });
+//     }
+
+//     // =====================================================
+//     // ADD BENEFICIARY
+//     // =====================================================
+
+//     // validation.beneficiaries.push(userId);
+
+//     // await validation.save({ session });
+
+//     // =========================================
+//     // UPDATE PIN
+//     // =========================================
+
+//     // pin.beneficiaries.push(userId);
+
+//     // increase score
+//     // pin.pinScore += 10;
+    
+//     // const voteWeight = getValidationWeight(user);
+
+// // pin.pinScore = Number(pin.pinScore || 0) + voteWeight;
+
+// const voteWeight = getValidationWeight(user);
+
+// /*
+// |--------------------------------------------------------------------------
+// | ADD BENEFICIARY
+// |--------------------------------------------------------------------------
+// */
+
+// validation.beneficiaries.push(userId);
+
+// pin.beneficiaries.push(userId);
+
+// /*
+// |--------------------------------------------------------------------------
+// | ADD WEIGHTED VOTE
+// |--------------------------------------------------------------------------
+// */
+
+// validation.votes.push({
+//   userId: user._id,
+
+//   vote: "VALID",
+
+//   weight: voteWeight,
+
+//   trustScore: Number(user.trustScore || 0),
+
+//   level: Number(user.level || 1),
+
+//   levelName: user.levelName || null,
+
+//   location: {
+//     latitude: Number(currentLatitude),
+//     longitude: Number(currentLongitude),
+//   },
+
+//   distanceMeters: liveDistance,
+
+//   xpEarned: travelXP,
+
+//   creditsEarned: 2,
+// });
+
+// /*
+// |--------------------------------------------------------------------------
+// | RECALCULATE SCORE
+// |--------------------------------------------------------------------------
+// */
+
+// const validVotes = validation.votes.filter(
+//   (vote) => vote.vote === "VALID",
+// );
+
+// const fakeVotes = validation.votes.filter(
+//   (vote) => vote.vote === "FAKE",
+// );
+
+// validation.validWeight = validVotes.reduce(
+//   (total, vote) =>
+//     total + Number(vote.weight || 0),
+//   0,
+// );
+
+// validation.fakeWeight = fakeVotes.reduce(
+//   (total, vote) =>
+//     total + Number(vote.weight || 0),
+//   0,
+// );
+
+// validation.validVotes = validVotes.length;
+
+// validation.fakeVotes = fakeVotes.length;
+
+// /*
+// |--------------------------------------------------------------------------
+// | FINAL CONFIDENCE SCORE
+// |--------------------------------------------------------------------------
+// */
+
+// validation.confidenceScore =
+//   validation.validWeight -
+//   validation.fakeWeight;
+
+// /*
+// |--------------------------------------------------------------------------
+// | SYNC PIN SCORE
+// |--------------------------------------------------------------------------
+// */
+
+// pin.pinScore =
+//   validation.confidenceScore;
+
+//     // =========================================
+//     // AUTO VERIFY PIN
+//     // CREATOR REWARD ONLY ONCE
+//     // =========================================
+
+//     // if (
+//     //   pin.pinScore >= 100 &&
+//     //   (!pin.pinStatus || pin.pinStatus === "pending")
+//     // ) {
+//     if (
+//   validation.confidenceScore >=
+//     VALIDATION_CONFIG.VERIFIED_SCORE &&
+//   validation.consensusStatus === "PENDING"
+// ) {
+//       // update pin status
+//         validation.consensusStatus = "VERIFIED";
+
+//   validation.consensusReachedAt = new Date();
+
+//   validation.status = "green";
+
+//   pin.pinStatus = "verified";
+
+//   pin.status = "green";
+//       // pin.pinStatus = "verified";
+//       // pin.status = "green";
+
+//       // =========================================
+//       // REWARD PIN CREATOR
+//       // =========================================
+
+//       const pinCreator = await User.findById(pin.createdBy).session(session);
+
+//       if (pinCreator) {
+//         // give xp
+//         pinCreator.xp += 15;
+
+//         // increase trust score
+//         pinCreator.trustScore = Math.min(
+//           99.9,
+//           Number((pinCreator.trustScore + 0.5).toFixed(1)),
+//         );
+
+//         // =========================================
+//         // UPDATE LEVEL
+//         // =========================================
+
+//         const creatorLevelData = getLevelData(pinCreator.xp);
+
+//         pinCreator.level = creatorLevelData.level;
+//         pinCreator.levelName = creatorLevelData.name;
+
+//         await pinCreator.save({ session });
+//       }
+//     }
+
+//     // =========================================
+//     // PENALIZE FAKE REPORTERS
+//     // =========================================
+
+//     if (pin.fakereportingBy.length > 0 && !pin.fakeReportersPenalized) {
+//       // get all fake reporters
+//       const fakeReporters = await User.find({
+//         _id: { $in: pin.fakereportingBy },
+//       }).session(session);
+
+//       for (const reporter of fakeReporters) {
+//         // =========================================
+//         // DECREASE TRUST SCORE
+//         // =========================================
+
+//         reporter.trustScore = Math.max(
+//           0,
+//           Number((reporter.trustScore - 15).toFixed(1)),
+//         );
+
+//         // =========================================
+//         // BAN USER IF BELOW 40
+//         // =========================================
+
+//         if (reporter.trustScore < 100) {
+//           reporter.status = "banned";
+//         }
+
+//         // =========================================
+//         // SAVE USER
+//         // =========================================
+
+//         await reporter.save({ session });
+
+//         // =========================================
+//         // CREATE FINE LOG
+//         // =========================================
+
+//         await Fine.create(
+//           [
+//             {
+//               userId: reporter._id,
+//               amount: 15,
+//               reason: `False fake report on verified pin ${pin._id}`,
+//             },
+//           ],
+//           { session },
+//         );
+//       }
+
+//       // =========================================
+//       // PREVENT DUPLICATE PENALTY
+//       // =========================================
+
+//       pin.fakeReportersPenalized = true;
+//     }
+
+//     await pin.save({ session });
+
+//     // =========================================
+//     // REWARD BENEFICIARY
+//     // =========================================
+
+//     const updated_lavel = user.xp + travelXP;
+
+//     await checkLevelUp(user, updated_lavel, session);
+
+//     user.xp += travelXP;
+//     user.credits += 2;
+
+//     await updateLeaderboardXP(user._id, travelXP, session);
+
+//     // ======================================
+//     // TRUST SCORE INCREASE
+//     // ======================================
+
+//     user.trustScore = Math.min(
+//       99.9,
+//       Number((user.trustScore + 0.1).toFixed(1)),
+//     );
+
+//     // =========================================
+//     // UPDATE LEVEL
+//     // =========================================
+
+//     // const levelData = getLevelData(user.xp);
+
+//     // user.level = levelData.level;
+//     // user.levelName = levelData.name;
+
+//     await user.save({ session });
+
+//     // =========================================
+//     // FETCH VALIDATOR
+//     // =========================================
+
+//     const validatorUser = await User.findById(validation.validatedBy).select(
+//       "name email xp level levelName credits trustScore",
+//     );
+
+//     // =========================================
+//     // CREATE BENEFICIARY ACTIVITY LOG
+//     // =========================================
+//     console.log("active", activeBoosts);
+
+//     await Activity.create(
+//       [
+//         {
+//           userId: userId,
+
+//           activityType: "pin_validated",
+
+//           pinId: pin._id,
+
+//           pinTitle: pin.description || "Pin Validation",
+
+//           images: pin.images || [],
+
+//           xpEarned: travelXP,
+
+//           creditsSpent: 2,
+
+//           distance: travelDistance,
+
+//           activityLocation: {
+//             latitude: pinLatitude,
+//             longitude: pinLongitude,
+//           },
+
+//           startLocation: {
+//             latitude: Number(currentLatitude),
+//             longitude: Number(currentLongitude),
+//           },
+
+//           endLocation: {
+//             latitude: pinLatitude,
+//             longitude: pinLongitude,
+//           },
+
+//           status: "completed",
+//         },
+//       ],
+//       { session },
+//     );
+
+//     // =========================================
+//     // PREPARE NOTIFICATIONS
+//     // =========================================
+
+//     const pinCreator = await User.findById(pin.createdBy)
+//       .select("fcmToken name")
+//       .session(session);
+
+//     const beneficiaryRewardNotification = {
+//       tokens: user.fcmToken ? [user.fcmToken] : [],
+//       title: "✅ Validation Successful",
+//       // body: `You earned ${travelXP} XP and 2 Credits for supporting this validation.`,
+//       body: `You travelled ${milesTravelled.toFixed(
+//   2,
+// )} miles and earned ${creditsEarned} Credits for validating this pin.`,
+//       data: {
+//         type: "PIN_VALIDATION_SUPPORT",
+//         pinId: pin._id.toString(),
+//         xp: travelXP,
+//         credits: 2,
+//       },
+//     };
+
+//     const creatorNotification = {
+//       tokens: pinCreator?.fcmToken ? [pinCreator.fcmToken] : [],
+//       title: "📍 Pin Validation",
+//       body: `${user.name} also validated your pin.`,
+//       data: {
+//         type: "PIN_VALIDATED_BY_USER",
+//         pinId: pin._id.toString(),
+//         validatorId: user._id.toString(),
+//       },
+//     };
+
+//     // =========================================
+//     // COMMIT
+//     // =========================================
+
+//     await session.commitTransaction();
+
+//     await Promise.all([
+//       sendNotification(beneficiaryRewardNotification),
+//       sendNotification(creatorNotification),
+//     ]);
+
+//     // =========================================
+//     // RESPONSE
+//     // =========================================
+
+//     return res.status(200).json({
+//       success: true,
+
+//       message: "You successfully joined this validation task.",
+
+//       validator: validatorUser,
+
+//       rewards: {
+//         xpEarned: travelXP,
+//         creditsEarned: 2,
+//       },
+
+//       pinData: {
+//         pinScore: pin.pinScore,
+//         pinStatus: pin.pinStatus,
+//         status: pin.status,
+//       },
+
+//       distanceInfo: {
+//         liveDistanceMeters: liveDistance.toFixed(2),
+
+//         travelDistanceMeters: travelDistance.toFixed(2),
+//       },
+//       activeBoosts,
+//       hexPartyActive,
+//     });
+//   } catch (error) {
+//     await session.abortTransaction();
+
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   } finally {
+//     session.endSession();
+//   }
+// };

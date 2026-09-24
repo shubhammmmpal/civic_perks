@@ -6,7 +6,7 @@ import {
   makePinBeacon,
   lockPinWithMultiLock,
   markPinAsGone,
-  itsGone
+  // itsGone
 } from "../controller/validation.controller.js";
 import { protect } from "../middleware/auth.middlewere.js";
 import { upload } from "../config/multer.js";
@@ -15,7 +15,7 @@ const router = express.Router();
 
 router.post("/validate/:pinId", protect, validatePin);
 router.post("/solve/:pinId", protect, upload.single("beforeImage"), solvePin);
-router.post("/:pinId/its-gone", protect, itsGone);
+// router.post("/:pinId/its-gone", protect, itsGone);
 router.patch("/:pinId/gone", protect, markPinAsGone);
 
 router.post("/fake/:pinId", protect, fakePin);

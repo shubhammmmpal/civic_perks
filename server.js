@@ -120,6 +120,7 @@ import magicRouteRoutes from "./src/routes/magicRoute.route.js";
 import downloadPdfRoutes from "./src/routes/downloadPdf.route.js";
 import dashboardRoutes from "./src/routes/dashboard.route.js";
 import notificationRoutes from "./src/routes/notification.route.js"
+import categoryAndSubcategoryRoutes from "./src/routes/categoryAndSubcategory.route.js"
 
 import stripeRoutes from "./src/routes/stripe.route.js";
 
@@ -152,6 +153,7 @@ app.use("/api/magic-routes", magicRouteRoutes);
 app.use("/api", downloadPdfRoutes);
 app.use("/api/admin/dashboard", dashboardRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api", categoryAndSubcategoryRoutes);
 
 const PORT = process.env.PORT || 5000;
 
