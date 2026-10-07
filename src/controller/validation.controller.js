@@ -1375,7 +1375,7 @@ export const solvePin = async (req, res) => {
     // CHECK LEVEL UP
     // =====================================================
 
-    await checkLevelUp(user, updatedXP, session);
+    // await checkLevelUp(user, updatedXP, session);
 
     // =====================================================
     // ADD REWARDS
@@ -5395,6 +5395,20 @@ export const validatePin = async (req, res) => {
       });
     }
 
+    if (
+      pin.status === "orange" &&
+      pin.claimedBy &&
+      pin.claimedBy.toString() !== userId.toString()
+    ) {
+      await session.abortTransaction();
+
+      return res.status(403).json({
+        success: false,
+        message:
+          "This pin has been claimed. Only the user who claimed it can validate it until it becomes green.",
+      });
+    }
+
     // =====================================================
     // 6. LOCK CHECK
     // =====================================================
@@ -6161,7 +6175,7 @@ export const validatePin = async (req, res) => {
      * other level-related logic.
      */
 
-    await checkLevelUp(user, updatedXP, session);
+    // await checkLevelUp(user, updatedXP, session);
 
     // -----------------------------------------------
     // Add XP
@@ -6398,7 +6412,7 @@ export const validatePin = async (req, res) => {
 
       title: "📍 Pin Validation",
 
-      body: `${user.name} validated your pin.`,
+      body: `${user.name} ${creditsEarned} validated your pin.`,
 
       data: {
         type: "PIN_VALIDATED_BY_USER",
@@ -7347,7 +7361,7 @@ export const fakePin = async (req, res) => {
     const updatedXP = Number(user.xp || 0) + Number(travelXP || 0);
 
     // Keep existing helper
-    await checkLevelUp(user, updatedXP, session);
+    // await checkLevelUp(user, updatedXP, session);
 
     // =====================================================
     // 34. ADD XP
@@ -7908,5 +7922,133 @@ export const fakePin = async (req, res) => {
     });
   } finally {
     await session.endSession();
+  }
+};
+
+export const claimPinAsMine = async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    const { pinId } = req.params;
+    const userId = req.user.id;
+
+    // =====================================================
+    // VALIDATE PIN ID
+    // =====================================================
+
+    if (!mongoose.Types.ObjectId.isValid(pinId)) {
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+        message: "Invalid pin ID",
+      });
+    }
+
+    // =====================================================
+    // FIND PIN
+    // =====================================================
+
+    const pin = await Pin.findById(pinId).session(session);
+
+    if (!pin) {
+      await session.abortTransaction();
+
+      return res.status(404).json({
+        success: false,
+        message: "Pin not found",
+      });
+    }
+
+    // =====================================================
+    // CREATOR CANNOT CLAIM OWN PIN
+    // =====================================================
+
+    if (pin.createdBy?.toString() === userId.toString()) {
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+        message: "You cannot claim your own pin",
+      });
+    }
+
+    // =====================================================
+    // GREEN PIN CANNOT BE CLAIMED
+    // =====================================================
+
+    if (pin.status === "green") {
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        success: false,
+        message: "This pin is already green and does not require a claim",
+      });
+    }
+
+    // =====================================================
+    // ALREADY CLAIMED
+    // =====================================================
+
+    if (pin.claimedBy) {
+      const isSameUser = pin.claimedBy.toString() === userId.toString();
+
+      await session.abortTransaction();
+
+      if (isSameUser) {
+        return res.status(400).json({
+          success: false,
+          message: "You have already claimed this pin",
+          data: {
+            pinId: pin._id,
+            claimedBy: pin.claimedBy,
+            claimedAt: pin.claimedAt,
+            status: pin.status,
+          },
+        });
+      }
+
+      return res.status(409).json({
+        success: false,
+        message: "This pin has already been claimed by another user",
+      });
+    }
+
+    // =====================================================
+    // CLAIM PIN
+    // =====================================================
+
+    pin.claimedBy = userId;
+    pin.claimedAt = new Date();
+    pin.status = "orange";
+
+    await pin.save({ session });
+
+    await session.commitTransaction();
+
+    return res.status(200).json({
+      success: true,
+      message: "Pin claimed successfully",
+      data: {
+        pinId: pin._id,
+        claimedBy: pin.claimedBy,
+        claimedAt: pin.claimedAt,
+        status: pin.status,
+      },
+    });
+  } catch (error) {
+    await session.abortTransaction();
+
+    console.error("claimPinAsMine error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to claim pin",
+      error: error.message,
+    });
+  } finally {
+    session.endSession();
   }
 };

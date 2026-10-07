@@ -6,6 +6,7 @@ import {
   makePinBeacon,
   lockPinWithMultiLock,
   markPinAsGone,
+  claimPinAsMine
   // itsGone
 } from "../controller/validation.controller.js";
 import { protect } from "../middleware/auth.middlewere.js";
@@ -21,5 +22,11 @@ router.patch("/:pinId/gone", protect, markPinAsGone);
 router.post("/fake/:pinId", protect, fakePin);
 router.post("/make-beacon", protect, makePinBeacon);
 router.post("/lock-pin", protect, lockPinWithMultiLock);
+
+router.patch(
+  "/:pinId/claim-as-mine",
+  protect,
+  claimPinAsMine,
+);
 
 export default router;

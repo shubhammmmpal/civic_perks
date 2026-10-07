@@ -301,7 +301,7 @@ user.trustScore = Math.min(
 // CHECK LEVEL UP
 // =========================================
 
-const levelup = await checkLevelUp(user, updatedXP);
+// const levelup = await checkLevelUp(user, updatedXP);
 
 // =========================================
 // PREPARE LEVEL-UP NOTIFICATION
@@ -432,9 +432,11 @@ if (levelUpNotification) {
     // CREATE NOTIFICATION FOR PIN CREATOR
     // =========================================
 
+    console.log(newPin)
+
     await Notification.create({
       title: "🎉 Pin Created Successfully",
-      description: `Your pin "${description || "Pin"}" has been created successfully. You earned ${xpReward} XP, 5 Credits and 0.1 Trust Score.`,
+      description: `Your pin "${newPin.category + " " + newPin.subCategory || "Pin"}" has been created successfully. You earned ${xpReward} XP, 5 Credits and 0.1 Trust Score.`,
       notificationType: "PIN_CREATED",
       receivers: [userId],
       senderRole: "system",
@@ -444,7 +446,7 @@ if (levelUpNotification) {
       await sendNotification({
         tokens: [user.fcmToken],
         title: "🎉 Pin Created Successfully",
-        body: `Your pin "${description || "Pin"}" has been created successfully.`,
+        body: `Your pin "${newPin.category + " " + newPin.subCategory || "Pin"}" has been created successfully.`,
         data: {
           type: "PIN_CREATED",
           pinId: String(newPin._id),
