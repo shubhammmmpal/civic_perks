@@ -436,7 +436,7 @@ if (levelUpNotification) {
 
     await Notification.create({
       title: "🎉 Pin Created Successfully",
-      description: `Your pin "${newPin.category + " " + newPin.subCategory || "Pin"}" has been created successfully. You earned ${xpReward} XP, 5 Credits and 0.1 Trust Score.`,
+      description: `Your pin "${newPin.questions[0].category + " " + newPin.questions[0].subCategory || "Pin"}" has been created successfully. You earned ${xpReward} XP, 5 Credits and 0.1 Trust Score.`,
       notificationType: "PIN_CREATED",
       receivers: [userId],
       senderRole: "system",
@@ -446,7 +446,7 @@ if (levelUpNotification) {
       await sendNotification({
         tokens: [user.fcmToken],
         title: "🎉 Pin Created Successfully",
-        body: `Your pin "${newPin.category + " " + newPin.subCategory || "Pin"}" has been created successfully.`,
+        body: `Your pin "${newPin.questions[0].category + " " + newPin.questions[0].subCategory || "Pin"}" has been created successfully.`,
         data: {
           type: "PIN_CREATED",
           pinId: String(newPin._id),
