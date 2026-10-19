@@ -286,16 +286,7 @@ const updatedXP =
 
 user.xp = updatedXP;
 
-// =========================================
-// UPDATE TRUST SCORE
-// =========================================
-
-user.trustScore = Math.min(
-  99.9,
-  Number(
-    (Number(user.trustScore || 0) + 0.1).toFixed(1),
-  ),
-);
+// (Trust score is NOT awarded on pin creation)
 
 // =========================================
 // CHECK LEVEL UP
@@ -436,7 +427,7 @@ if (levelUpNotification) {
 
     await Notification.create({
       title: "🎉 Pin Created Successfully",
-      description: `Your pin "${newPin.questions[0].category + " " + newPin.questions[0].subCategory || "Pin"}" has been created successfully. You earned ${xpReward} XP, 5 Credits and 0.1 Trust Score.`,
+      description: `Your pin "${newPin.questions[0].subCategory || "Pin"}" has been created successfully. You earned ${xpReward} XP and 5 Credits.`,
       notificationType: "PIN_CREATED",
       receivers: [userId],
       senderRole: "system",
@@ -452,7 +443,6 @@ if (levelUpNotification) {
           pinId: String(newPin._id),
           xp: String(xpReward),
           credits: "5",
-          trustScore: "0.1",
         },
       });
     }
@@ -497,7 +487,6 @@ if (levelUpNotification) {
       rewards: {
         gainedXP: 10,
         gainedCredits: 5,
-        gainedTrustScore: 0.1,
       },
 
       remainingCredits: user.credits,

@@ -179,7 +179,7 @@ export const getQuestion = async (req, res) => {
       subCategoryFilter,
     )
       .select(
-        "_id categoryId subcategoryName icon unlockOnLevel requiresImage",
+        "_id categoryId subcategoryName description icon unlockOnLevel requiresImage",
       )
       .lean();
 
@@ -233,6 +233,9 @@ export const getQuestion = async (req, res) => {
 
           subcategoryName:
             subcategory.subcategoryName,
+
+          description:
+            subcategory.description || "",
 
           icon: subcategory.icon,
 

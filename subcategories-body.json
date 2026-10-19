@@ -1,0 +1,609 @@
+[
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7d",
+        "subcategoryName": "Dark Zone / Broken Light",
+        "description": "Unlit, dangerous pedestrian areas.",
+        "icon": "🏚️",
+        "unlockOnLevel": {
+            "level": 2
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "GOVERNMENT"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7d",
+        "subcategoryName": "Pothole / Road Damage",
+        "description": "Hazards for cyclists, wheelchairs, and cars.",
+        "icon": "🕳️",
+        "unlockOnLevel": {
+            "level": 1
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "GOVERNMENT"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7d",
+        "subcategoryName": "Abandoned Property",
+        "description": "Structural decay or dangerous empty buildings.",
+        "icon": "🏚️",
+        "unlockOnLevel": {
+            "level": 10
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "GOVERNMENT"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7d",
+        "subcategoryName": "Hostile Ground",
+        "description": "Anti-homeless architecture or blocked public spaces.",
+        "icon": "🚧",
+        "unlockOnLevel": {
+            "level": 10
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "GOVERNMENT"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7d",
+        "subcategoryName": "Obstruction",
+        "description": "Blocked sidewalks (construction, dumped scooters, etc.).",
+        "icon": "🛑",
+        "unlockOnLevel": {
+            "level": 3
+        },
+        "requiresImage": true,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7d",
+        "subcategoryName": "Overflow",
+        "description": "City trash cans that are completely full and spilling over.",
+        "icon": "🛢️",
+        "unlockOnLevel": {
+            "level": 1
+        },
+        "requiresImage": true,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7d",
+        "subcategoryName": "Hazardous Waste",
+        "description": "Dangerous dumping (e.g., broken glass, chemicals).",
+        "icon": "⚠️",
+        "unlockOnLevel": {
+            "level": 14
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "GOVERNMENT"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7d",
+        "subcategoryName": "Vandalism",
+        "description": "Malicious tagging.",
+        "icon": "🧽",
+        "unlockOnLevel": {
+            "level": 7
+        },
+        "requiresImage": true,
+        "solvedBy": [
+            "GOVERNMENT"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7d",
+        "subcategoryName": "Dead Zone",
+        "description": "Cellular black holes where emergency calls fail.",
+        "icon": "📵",
+        "unlockOnLevel": {
+            "level": 14
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "GOVERNMENT"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7d",
+        "subcategoryName": "Heritage at Risk",
+        "description": "Historical architecture that is actively decaying.",
+        "icon": "🏛️",
+        "unlockOnLevel": {
+            "level": 15
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "GOVERNMENT"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7e",
+        "subcategoryName": "Broken Fixture",
+        "description": "Smashed benches, broken railings, or sharp edges.",
+        "icon": "🪑",
+        "unlockOnLevel": {
+            "level": 3
+        },
+        "requiresImage": true,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7e",
+        "subcategoryName": "Furniture",
+        "description": "Good condition couches, tables, good wood or chairs left on the curb.",
+        "icon": "🛋️",
+        "unlockOnLevel": {
+            "level": 5
+        },
+        "requiresImage": true,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7e",
+        "subcategoryName": "Media / Books",
+        "description": "Free books, records, or movies left out for adoption.",
+        "icon": "📚",
+        "unlockOnLevel": {
+            "level": 4
+        },
+        "requiresImage": true,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7e",
+        "subcategoryName": "Electronics",
+        "description": "Discarded TVs, monitors, or appliances that might still work or have parts.",
+        "icon": "📺",
+        "unlockOnLevel": {
+            "level": 5
+        },
+        "requiresImage": true,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7e",
+        "subcategoryName": "Cardboard Goldmine",
+        "description": "Clean, dry moving boxes and packing supplies.",
+        "icon": "📦",
+        "unlockOnLevel": {
+            "level": 4
+        },
+        "requiresImage": true,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7e",
+        "subcategoryName": "Garbage",
+        "description": "Zone with garbage.",
+        "icon": "🗑️",
+        "unlockOnLevel": {
+            "level": 1
+        },
+        "requiresImage": true,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7f",
+        "subcategoryName": "Language Anchor",
+        "description": "Spaces for informal, free language exchange.",
+        "icon": "💬",
+        "unlockOnLevel": {
+            "level": 9
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7f",
+        "subcategoryName": "Study Haven",
+        "description": "Free, quiet indoor spaces for students (no purchase required).",
+        "icon": "📚",
+        "unlockOnLevel": {
+            "level": 8
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7f",
+        "subcategoryName": "Acoustic Stage",
+        "description": "Great spots for buskers and street musicians.",
+        "icon": "🎵",
+        "unlockOnLevel": {
+            "level": 8
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7f",
+        "subcategoryName": "Free Wall",
+        "description": "Legal graffiti and community mural zones.",
+        "icon": "🎨",
+        "unlockOnLevel": {
+            "level": 5
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7f",
+        "subcategoryName": "Safe Keeper",
+        "description": "Trusted local shops acting as the neighborhood lost and found.",
+        "icon": "🔑",
+        "unlockOnLevel": {
+            "level": 11
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7f",
+        "subcategoryName": "Free Play",
+        "description": "Unlocked, free public sports courts.",
+        "icon": "⚽",
+        "unlockOnLevel": {
+            "level": 7
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7f",
+        "subcategoryName": "Mutual Aid / Neighbor Help Needed",
+        "description": "Requests for quick, non-monetary help (e.g., \"Need help moving a couch\").",
+        "icon": "🤝",
+        "unlockOnLevel": {
+            "level": 7
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b7f",
+        "subcategoryName": "Digital Lifeline",
+        "description": "Truly free, passwordless public Wi-Fi.",
+        "icon": "📶",
+        "unlockOnLevel": {
+            "level": 6
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b80",
+        "subcategoryName": "Community Pantry",
+        "description": "24/7 decentralized food drop-offs.",
+        "icon": "🥫",
+        "unlockOnLevel": {
+            "level": 12
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b80",
+        "subcategoryName": "Escape Line / Safety Post",
+        "description": "Hubs with free burner phones for those fleeing abuse.",
+        "icon": "📞",
+        "unlockOnLevel": {
+            "level": 13
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b80",
+        "subcategoryName": "Public Grill",
+        "description": "Free public fire pits or charcoal grills for cooking.",
+        "icon": "🔥",
+        "unlockOnLevel": {
+            "level": 7
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b80",
+        "subcategoryName": "Neighborhood Event Leftovers",
+        "description": "Free food/supplies remaining after a public gathering or festival.",
+        "icon": "🍕",
+        "unlockOnLevel": {
+            "level": 6
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b81",
+        "subcategoryName": "Free Air",
+        "description": "Free-to-use air compressors for bicycles and wheelchairs.",
+        "icon": "💨",
+        "unlockOnLevel": {
+            "level": 2
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b81",
+        "subcategoryName": "Safe Rack",
+        "description": "Highly secure bicycle parking visible to cameras or bouncers.",
+        "icon": "🚲",
+        "unlockOnLevel": {
+            "level": 8
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b81",
+        "subcategoryName": "Safe Park",
+        "description": "Verified zones where people sleeping in cars won't be ticketed.",
+        "icon": "🚙",
+        "unlockOnLevel": {
+            "level": 13
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b82",
+        "subcategoryName": "Sponsored Merchant Bounty",
+        "icon": "🛍️",
+        "unlockOnLevel": {
+            "level": 16
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b82",
+        "subcategoryName": "Player-Funded Staked Bounty",
+        "icon": "💎",
+        "unlockOnLevel": {
+            "level": 17
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b82",
+        "subcategoryName": "Megaphone Zone",
+        "description": "Official public service announcements, protests, or critical city warnings.",
+        "icon": "📣",
+        "unlockOnLevel": {
+            "level": 15
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "GOVERNMENT"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b83",
+        "subcategoryName": "Clean Wash",
+        "description": "Free public showers, beach rinses, or community locker rooms.",
+        "icon": "🚿",
+        "unlockOnLevel": {
+            "level": 12
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b84",
+        "subcategoryName": "Deposit Drop",
+        "icon": "♻️",
+        "unlockOnLevel": {
+            "level": 9
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b84",
+        "subcategoryName": "Organic",
+        "description": "Neighborhood compost bins or drop-offs for food scraps.",
+        "icon": "🌱",
+        "unlockOnLevel": {
+            "level": 6
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b84",
+        "subcategoryName": "Toxic Drop",
+        "description": "Hyper-local drop spots for batteries, oil, and e-waste.",
+        "icon": "🪫",
+        "unlockOnLevel": {
+            "level": 6
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b84",
+        "subcategoryName": "Lost Pet",
+        "description": "Active alerts for missing pets in the immediate area.",
+        "icon": "🐾",
+        "unlockOnLevel": {
+            "level": 11
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b84",
+        "subcategoryName": "Guerrilla Garden",
+        "description": "Community-run, unauthorized vegetable/plant plots.",
+        "icon": "🪴",
+        "unlockOnLevel": {
+            "level": 4
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b84",
+        "subcategoryName": "Public Ashtray",
+        "description": "Fire-safe cigarette disposal.",
+        "icon": "🚬",
+        "unlockOnLevel": {
+            "level": 2
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b84",
+        "subcategoryName": "Clean Lung",
+        "description": "Pedestrian routes physically separated from heavy car exhaust.",
+        "icon": "🍃",
+        "unlockOnLevel": {
+            "level": 3
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab3d7e1a7fd9875f5938b85",
+        "subcategoryName": "Public Mail Drop",
+        "description": "NGOs or churches allowing unhoused people to receive official mail.",
+        "icon": "📬",
+        "unlockOnLevel": {
+            "level": 13
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab41c7316cbc64bf23b848f",
+        "subcategoryName": "Animal Feeding Station / Water Bowl",
+        "description": "Trusted spots where water and kibble are left out.",
+        "icon": "🥣",
+        "unlockOnLevel": {
+            "level": 5
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab41c7316cbc64bf23b848f",
+        "subcategoryName": "Paw-Safe Path",
+        "description": "Shaded walking routes to prevent burnt paws in summer.",
+        "icon": "🐾",
+        "unlockOnLevel": {
+            "level": 5
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab41c7316cbc64bf23b848f",
+        "subcategoryName": "Pet Hydration",
+        "icon": "🥣",
+        "unlockOnLevel": {
+            "level": 9
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    },
+    {
+        "categoryId": "6ab41c7316cbc64bf23b848f",
+        "subcategoryName": "Stray Sanctuary",
+        "description": "Safe, discreet feeding zones for neighborhood stray colonies.",
+        "icon": "🐈",
+        "unlockOnLevel": {
+            "level": 12
+        },
+        "requiresImage": false,
+        "solvedBy": [
+            "CITIZEN"
+        ]
+    }
+]

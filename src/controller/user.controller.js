@@ -481,7 +481,7 @@ export const getProfile = async (req, res) => {
 
     // Level below 10
     if (currentLevel < 10) {
-      delete userObj.email;
+      // delete userObj.email;
       delete userObj.mobile;
     }
 

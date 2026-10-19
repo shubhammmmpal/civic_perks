@@ -267,7 +267,25 @@ const AnswerSchema = new mongoose.Schema(
       trim: true,
     },
 
+    categoryIcon: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
     subCategory: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    subCategoryIcon: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    subCategoryDescription: {
       type: String,
       trim: true,
       default: "",

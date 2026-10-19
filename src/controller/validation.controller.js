@@ -1715,7 +1715,7 @@ export const solvePin = async (req, res) => {
 
           pinId: pin._id,
 
-          pinTitle: pin.description || "Pin Solved",
+          pinTitle: pin.description || "Pin validated",
 
           images: beforeImage ? [beforeImage] : pin.images || [],
 
@@ -1757,9 +1757,9 @@ export const solvePin = async (req, res) => {
     const creatorNotification = {
       tokens: pinCreator?.fcmToken ? [pinCreator.fcmToken] : [],
 
-      title: "✅ Your Pin Has Been Solved!",
+      title: "✅ Your Pin Has Been validated!",
 
-      body: "Someone has successfully solved your reported pin.",
+      body: "Someone has successfully validated your reported pin.",
 
       data: {
         type: "PIN_SOLVED",
@@ -1781,7 +1781,7 @@ export const solvePin = async (req, res) => {
 
       body:
         `You earned ${validatorXP} XP and ` +
-        `${validatorBounty} Credits for solving a pin.`,
+        `${validatorBounty} Credits ${pin.questions[0].subCategory } for validating a pin.`,
 
       data: {
         type: "PIN_SOLVED_REWARD",
@@ -1901,7 +1901,7 @@ export const solvePin = async (req, res) => {
     return res.status(200).json({
       success: true,
 
-      message: "Task solved successfully and rewards distributed",
+      message: "Task validated successfully and rewards distributed",
 
       gainedReward: {
         xp: validatorXP,
